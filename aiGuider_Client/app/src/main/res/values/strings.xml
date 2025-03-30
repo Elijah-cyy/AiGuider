@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">简单安卓应用</string>
+    <string name="welcome_message">欢迎使用我的应用!</string>
+    <string name="click_me">点击我</string>
+    <string name="button_clicked">按钮已点击!</string>
+</resources> 

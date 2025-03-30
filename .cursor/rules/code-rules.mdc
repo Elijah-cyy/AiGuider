@@ -1,0 +1,48 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# 项目背景
+这是一个基于Android/Unity和FastAPI的AR智能导游眼镜系统，整合多模态感知、大语言模型（LLM）和知识图谱技术，实现低延迟的实时交互。项目包含AR眼镜客户端、Python后端服务和多模态AI模型部署。
+
+# 编码标准
+[1,3](mdc:@ref)
+- Python代码遵循PEP8规范，TypeScript/Java代码遵循Google风格指南
+- 优先使用异步编程（async/await）处理IO密集型任务
+- 所有API接口必须包含类型提示和Pydantic模型验证
+- 核心算法模块必须包含时间复杂度注释
+- 客户端与服务端交互需包含ProtoBuffer定义
+- 代码要加上详细的中文注释
+
+# 首选库与框架
+[2,3](mdc:@ref)
+# 服务器端
+- Web框架: FastAPI (>=0.95)
+- LLM编排: LangGraph
+- 数据库: PostgreSQL + SQLAlchemy异步驱动
+- 消息队列: Kafka + aiokafka
+- 部署: Gunicorn+Uvicorn组合
+
+# AR眼镜端
+- 通信协议: gRPC-Web + Protocol Buffers
+- 3D渲染: Unity URP管线
+
+
+# 测试要求
+[2,3](mdc:@ref)
+- 接口测试: 使用httpx模拟异步请求
+- 压力测试: Locust模拟1000+并发AR设备连接
+- 单元测试覆盖率 ≥85%
+- 核心模块必须包含性能基准测试
+- AR渲染需进行帧率稳定性测试（≥60FPS）
+
+
+# 错误处理
+[1,2](mdc:@ref)
+- 实现分级错误处理：
+  1. 客户端错误（立即反馈）
+  2. 服务端错误（3秒内降级响应）
+  3. LLM错误（返回预设知识库内容）
+- 关键路径必须包含重试机制（指数退避算法）
+- 所有异常必须包含错误码和调试指纹
