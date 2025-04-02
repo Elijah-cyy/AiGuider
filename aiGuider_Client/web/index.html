@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>aiGuider Web调试界面</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>aiGuider Web调试界面</h1>
+            <div class="status-bar">
+                <div class="status" id="connection-status">
+                    <span class="status-label">后端连接状态：</span>
+                    <span class="status-value" id="status-value">未连接</span>
+                </div>
+                <div class="status" id="response-time">
+                    <span class="status-label">响应时间：</span>
+                    <span class="status-value" id="time-value">-</span>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="chat-container">
+                <div class="chat-messages" id="chat-messages">
+                    <!-- 消息将通过JavaScript动态添加 -->
+                </div>
+
+                <div class="chat-input-container">
+                    <form id="chat-form">
+                        <div class="input-group">
+                            <textarea id="message-input" placeholder="输入您的问题..." rows="2"></textarea>
+                            <div class="input-actions">
+                                <label for="image-upload" class="upload-btn" title="上传图片">
+                                    <svg viewBox="0 0 24 24" width="24" height="24">
+                                        <path d="M19.5 12c-2.483 0-4.5 2.015-4.5 4.5s2.017 4.5 4.5 4.5 4.5-2.015 4.5-4.5-2.017-4.5-4.5-4.5zm2.5 5h-2v2h-1v-2h-2v-1h2v-2h1v2h2v1zm-7.18 4h-14.32v-20h24v12.5c0 .46-.02.92-.06 1.37l-3.13-2.53c-.47-.37-1.15-.29-1.5.17l-1.69 2.25zm-9.32-15h-1c-.55 0-1 .45-1 1v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1c0-.55-.45-1-1-1zm6 0h-4c-.55 0-1 .45-1 1v1c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1c0-.55-.45-1-1-1zm6 0h-4c-.55 0-1 .45-1 1v1c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1c0-.55-.45-1-1-1zm-12 9l1.63-2.18c.24-.31.65-.31.89 0l3.48 4.68 1.63-2.18c.24-.31.65-.31.89 0l3.48 4.68h-12z"/>
+                                    </svg>
+                                </label>
+                                <input type="file" id="image-upload" accept="image/*" hidden>
+                                <button type="submit" class="send-btn">发送</button>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="image-preview-container" class="image-preview-container hidden">
+                        <div class="image-preview">
+                            <img id="image-preview" src="" alt="预览">
+                            <button id="remove-image" class="remove-image">&times;</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-panel">
+                <div class="panel-header">控制面板</div>
+                <div class="panel-body">
+                    <button id="clear-chat" class="control-btn">清除对话</button>
+                    <button id="test-connection" class="control-btn">测试连接</button>
+                    <div class="server-config">
+                        <label for="server-url">后端服务地址：</label>
+                        <input type="text" id="server-url" value="http://localhost:8000/api/v1">
+                    </div>
+                </div>
+                <div class="panel-footer">
+                    <div id="error-container" class="error-container hidden">
+                        <div class="error-header">错误信息</div>
+                        <div id="error-message" class="error-message"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>aiGuider - AR智能导游眼镜系统测试界面</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
