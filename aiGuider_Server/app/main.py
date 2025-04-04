@@ -31,6 +31,23 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# 日志中间件：全局HTTP中间件，会在每次HTTP请求到达时触发
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"---------------------------------------------------------------------------")
+    logger.info(f"请求开始: {request.method} {request.url}")
+    logger.debug(f"请求头: {dict(request.headers)}")
+    
+    try:
+        response = await call_next(request)
+        logger.info(f"请求完成: {request.method} {request.url} 状态码: {response.status_code}")
+        print(f"---------------------------------------------------------------------------")
+        return response
+    except Exception as e:
+        logger.error(f"请求异常: {request.method} {request.url} 错误: {str(e)}")
+        print(f"---------------------------------------------------------------------------")
+        raise
+
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
@@ -67,4 +84,4 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

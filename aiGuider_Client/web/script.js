@@ -38,30 +38,48 @@ function init() {
 // 设置事件监听器
 function setupEventListeners() {
     // 发送消息
-    chatForm.addEventListener('submit', handleChatSubmit);
+    chatForm.addEventListener('submit', (e) => {
+        console.log('[Event] 提交聊天表单');
+        handleChatSubmit(e);
+    });
     
     // 图片上传
-    imageUpload.addEventListener('change', handleImageUpload);
+    imageUpload.addEventListener('change', (e) => {
+        console.log('[Event] 上传图片');
+        handleImageUpload(e);
+    });
     
     // 移除图片
-    removeImageBtn.addEventListener('click', handleRemoveImage);
+    removeImageBtn.addEventListener('click', (e) => {
+        console.log('[Event] 移除图片');
+        handleRemoveImage(e);
+    });
     
     // 清除对话
-    clearChatBtn.addEventListener('click', handleClearChat);
+    clearChatBtn.addEventListener('click', async (e) => {
+        console.log('[Event] 清除对话');
+        await handleClearChat(e);
+    });
     
     // 测试连接
-    testConnectionBtn.addEventListener('click', testConnection);
+    testConnectionBtn.addEventListener('click', (e) => {
+        console.log('[Event] 测试连接');
+        testConnection(e);
+    });
 }
 
 // 初始化会话
 async function initSession() {
+    console.log('[会话] 初始化会话流程开始');
     // 从localStorage获取会话ID
     sessionId = localStorage.getItem('aiGuider_session_id');
+    console.log('[会话] 当前存储的sessionId:', sessionId);
     
     // 如果没有会话ID，创建新会话
     if (!sessionId) {
         try {
             const apiUrl = serverUrlInput.value.trim();
+            console.log('[API] 创建新会话请求', { apiUrl });
             const response = await fetch(`${apiUrl}/session/create`, {
                 method: 'POST'
             });
@@ -70,16 +88,16 @@ async function initSession() {
                 const data = await response.json();
                 sessionId = data.session_id;
                 localStorage.setItem('aiGuider_session_id', sessionId);
-                console.log('创建新会话:', sessionId);
+                console.log('[API] 创建新会话成功:', sessionId);
                 
                 // 创建会话成功后开始轮询
                 startPolling();
             }
         } catch (error) {
-            console.error('创建会话失败:', error);
+            console.error('[API] 创建会话失败:', error);
         }
     } else {
-        console.log('使用现有会话:', sessionId);
+        console.log('[API] 使用现有会话:', sessionId);
         startPolling();
     }
 }
@@ -119,6 +137,7 @@ async function handleChatSubmit(e) {
 
 // 发送消息到后端
 async function sendMessage(text, image = null) {
+    console.log('[API] 准备发送消息到后端', { text, image: image ? '有图片' : '无图片' });
     const apiUrl = serverUrlInput.value.trim();
     if (!apiUrl) {
         throw new Error('请输入有效的后端服务地址');
@@ -145,6 +164,7 @@ async function sendMessage(text, image = null) {
             headers['X-Session-ID'] = sessionId;
         }
         
+        console.log('[API] 发送消息会话ID:', sessionId);
         const response = await fetch(`${apiUrl}/chat`, {
             method: 'POST',
             headers: headers,
@@ -275,12 +295,25 @@ function handleRemoveImage() {
 }
 
 // 清除对话
-function handleClearChat() {
+async function handleClearChat(e) {
     // 确认框
     if (confirm('确定要清除所有对话记录吗？')) {
         chatMessages.innerHTML = '';
         conversationHistory = [];
         saveConversationHistory();
+        
+        // 重置会话ID并重新初始化
+        sessionId = null;
+        localStorage.removeItem('aiGuider_session_id');
+        console.log('[会话] 已清除旧会话ID');
+        
+        // 创建新会话
+        await initSession();
+        
+        // 清除后重新启动轮询
+        if (isConnected && sessionId) {
+            startPolling();
+        }
     }
 }
 
@@ -329,6 +362,12 @@ function updateConnectionStatus(connected) {
     isConnected = connected;
     statusValue.textContent = connected ? '已连接' : '未连接';
     statusValue.className = connected ? 'status-value connected' : 'status-value disconnected';
+    
+    // 连接断开时停止轮询
+    if (!connected && pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
 }
 
 // 更新响应时间显示
@@ -386,44 +425,55 @@ function loadConversationHistory() {
 
 // 开始轮询后端主动消息
 function startPolling() {
+    // 清除现有轮询
     if (pollingInterval) {
         clearInterval(pollingInterval);
+        pollingInterval = null;
     }
     
-    pollingInterval = setInterval(async () => {
-        if (!isConnected || !sessionId) return;
-        
-        try {
-            const apiUrl = serverUrlInput.value.trim();
-            const headers = {};
-            
-            if (sessionId) {
-                headers['X-Session-ID'] = sessionId;
-            }
-            
-            const response = await fetch(`${apiUrl}/messages`, {
-                method: 'GET',
-                headers: headers
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
+    // 仅在连接有效时启动新轮询
+    if (isConnected && sessionId) {
+        pollingInterval = setInterval(async () => {
+            try {
+                const apiUrl = serverUrlInput.value.trim();
+                const headers = {};
                 
-                if (data.messages && data.messages.length > 0) {
-                    // 处理后端主动发送的消息
-                    data.messages.forEach(msg => {
-                        addMessage(msg.content, 'ai');
-                        conversationHistory.push({ role: 'assistant', content: msg.content });
-                    });
-                    
-                    saveConversationHistory();
+                if (sessionId) {
+                    headers['X-Session-ID'] = sessionId;
                 }
+                
+                console.log('[轮询] 请求消息接口', { time: new Date().toISOString(), sessionId });
+                const response = await fetch(`${apiUrl}/messages`, {
+                    method: 'GET',
+                    headers: headers
+                });
+                console.log('[轮询] 收到响应', { status: response.status });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.messages && data.messages.length > 0) {
+                        console.log('[轮询] 收到消息', {
+                            count: data.messages.length,
+                            sample: data.messages[0].content.substring(0, 50)
+                        });
+                        // 处理后端主动发送的消息
+                        data.messages.forEach(msg => {
+                            addMessage(msg.content, 'ai');
+                            conversationHistory.push({ role: 'assistant', content: msg.content });
+                        });
+                        
+                        saveConversationHistory();
+                    } else {
+                        console.log('[轮询] 没有新消息');
+                    }
+                }
+            } catch (error) {
+                console.error('轮询消息失败:', error);
             }
-        } catch (error) {
-            console.error('轮询消息失败:', error);
-        }
-    }, API_POLLING_INTERVAL);
+        }, API_POLLING_INTERVAL);
+    }
 }
 
 // 启动
-document.addEventListener('DOMContentLoaded', init); 
+document.addEventListener('DOMContentLoaded', init);

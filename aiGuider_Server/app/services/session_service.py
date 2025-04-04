@@ -10,7 +10,10 @@ import random
 import asyncio
 from typing import Dict, List, Optional
 import uuid
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 # 模拟AI应用实例
 class AIApplication:
@@ -149,6 +152,7 @@ class SessionManager:
         """创建新会话"""
         session_id = str(uuid.uuid4())
         self.sessions[session_id] = AIApplication(session_id)
+        logger.info(f"[SESSION] 创建新会话 {session_id}")
         return session_id
     
     def get_session(self, session_id: str) -> Optional[AIApplication]:
@@ -162,6 +166,7 @@ class SessionManager:
         if not app:
             session_id = self.create_session()
             app = self.get_session(session_id)
+            logger.info(f"[SESSION] 创建新会话处理查询 {session_id} 内容: {query_text[:50]}")
         
         # 处理查询
         return app.process_query(query_text, image)
@@ -170,9 +175,12 @@ class SessionManager:
         """获取待发送的主动消息"""
         app = self.get_session(session_id)
         if not app:
+            logger.warning(f"[SESSION] 无效会话ID {session_id} 请求消息")
             return []
         
-        return app.get_pending_messages()
+        messages = app.get_pending_messages()
+        logger.debug(f"[SESSION] 返回会话 {session_id} 待处理消息 {len(messages)}条")
+        return messages
 
 # 全局会话管理器实例
-session_manager = SessionManager() 
+session_manager = SessionManager()
