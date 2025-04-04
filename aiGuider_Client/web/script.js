@@ -467,6 +467,21 @@ function startPolling() {
                     } else {
                         console.log('[轮询] 没有新消息');
                     }
+                } else if (response.status === 404) {
+                    // 会话不存在或已过期，需要创建新会话
+                    console.warn('[轮询] 会话ID无效或已过期，重新初始化会话');
+                    // 清除本地存储的会话ID
+                    localStorage.removeItem('aiGuider_session_id');
+                    sessionId = null;
+                    // 重新初始化会话
+                    await initSession();
+                } else if (response.status === 400) {
+                    // 未提供会话ID
+                    console.warn('[轮询] 未提供会话ID，重新初始化会话');
+                    // 重新初始化会话
+                    await initSession();
+                } else {
+                    console.error('[轮询] 请求失败', { status: response.status });
                 }
             } catch (error) {
                 console.error('轮询消息失败:', error);

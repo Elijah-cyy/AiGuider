@@ -23,28 +23,42 @@ class AIApplication:
         self.last_active = datetime.now()
         self.conversation_history = []
         self.pending_messages = []  # 存储待发送的主动消息
-        self.message_interval = random.randint(15, 30)  # 主动发消息的间隔(秒)
+        self.message_interval = random.randint(5, 10)  # 主动发消息的间隔(秒)
         self.last_proactive_time = time.time()
+        self.MAX_PENDING_MESSAGES = 2  # 最多允许2条待处理的主动消息
         
-        # 初始化主动消息任务
-        asyncio.create_task(self._generate_proactive_messages())
+        # 初始化主动消息任务，并保存任务引用以便后续取消
+        self._task = asyncio.create_task(self._generate_proactive_messages())
+    
+    def cleanup(self):
+        """清理资源，取消后台任务"""
+        if hasattr(self, '_task') and not self._task.done():
+            self._task.cancel()
+            logger.info(f"[SESSION] 会话 {self.session_id} 的消息生成协程已取消")
     
     async def _generate_proactive_messages(self):
         """生成主动消息的协程"""
-        while True:
-            await asyncio.sleep(self.message_interval)
-            current_time = time.time()
-            
-            # 检查是否应该生成新消息
-            if current_time - self.last_proactive_time >= self.message_interval:
-                proactive_message = self._create_proactive_message()
-                if proactive_message:
-                    self.pending_messages.append({
-                        "id": str(uuid.uuid4()),
-                        "content": proactive_message,
-                        "timestamp": datetime.now().isoformat()
-                    })
-                    self.last_proactive_time = current_time
+        try:
+            while True:
+                await asyncio.sleep(self.message_interval)
+                current_time = time.time()
+                
+                # 检查是否应该生成新消息，并确保待处理消息不超过最大限制
+                if (current_time - self.last_proactive_time >= self.message_interval and 
+                        len(self.pending_messages) < self.MAX_PENDING_MESSAGES):
+                    proactive_message = self._create_proactive_message()
+                    if proactive_message:
+                        self.pending_messages.append({
+                            "id": str(uuid.uuid4()),
+                            "content": proactive_message,
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        self.last_proactive_time = current_time
+                        logger.debug(f"[SESSION] 会话 {self.session_id} 生成新的主动消息，当前共有 {len(self.pending_messages)} 条待处理消息")
+        except asyncio.CancelledError:
+            logger.info(f"[SESSION] 会话 {self.session_id} 的消息生成协程已停止")
+        except Exception as e:
+            logger.error(f"[SESSION] 会话 {self.session_id} 的消息生成协程出错: {str(e)}")
     
     def _create_proactive_message(self) -> Optional[str]:
         """创建一条主动消息"""
@@ -129,24 +143,70 @@ class SessionManager:
         self.sessions: Dict[str, AIApplication] = {}
         self.cleanup_interval = 3600  # 清理过期会话的间隔(秒)
         
-        # 启动定期清理任务
-        asyncio.create_task(self._cleanup_expired_sessions())
+        # 启动定期清理任务并保存引用，便于后续取消
+        self._cleanup_task = asyncio.create_task(self._cleanup_expired_sessions())
     
     async def _cleanup_expired_sessions(self):
         """定期清理过期会话"""
-        while True:
-            await asyncio.sleep(self.cleanup_interval)
-            current_time = datetime.now()
-            expired_sessions = []
-            
-            for session_id, app in self.sessions.items():
-                # 超过4小时未活动的会话视为过期
-                if (current_time - app.last_active).total_seconds() > 14400:
-                    expired_sessions.append(session_id)
-            
-            # 删除过期会话
-            for session_id in expired_sessions:
-                del self.sessions[session_id]
+        try:
+            while True:
+                await asyncio.sleep(self.cleanup_interval)
+                current_time = datetime.now()
+                expired_sessions = []
+                
+                for session_id, app in self.sessions.items():
+                    # 超过4小时未活动的会话视为过期
+                    if (current_time - app.last_active).total_seconds() > 14400:
+                        expired_sessions.append(session_id)
+                
+                # 删除过期会话
+                for session_id in expired_sessions:
+                    await self.cleanup_session(session_id)
+        except asyncio.CancelledError:
+            logger.info("[SESSION] 会话管理器的清理协程已停止")
+        except Exception as e:
+            logger.error(f"[SESSION] 会话管理器的清理协程出错: {str(e)}")
+    
+    async def cleanup_all(self):
+        """
+        清理所有会话资源和管理器自身资源，用于应用关闭时调用
+        """
+        # 取消清理协程
+        if hasattr(self, '_cleanup_task') and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            try:
+                # 等待协程正常结束
+                await asyncio.wait_for(self._cleanup_task, timeout=5.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                logger.warning("[SESSION] 等待清理协程取消超时")
+        
+        # 清理所有会话
+        session_ids = list(self.sessions.keys())
+        for session_id in session_ids:
+            await self.cleanup_session(session_id)
+        
+        logger.info("[SESSION] 所有会话和管理器资源已清理完成")
+    
+    async def cleanup_session(self, session_id: str):
+        """
+        清理会话并释放资源
+        
+        目前实现为直接删除会话，将来可修改为持久化到数据库
+        
+        Args:
+            session_id: 要清理的会话ID
+        """
+        if session_id in self.sessions:
+            # 先清理资源，主要是回收协程
+            self.sessions[session_id].cleanup()
+            # TODO:这里将来可以添加持久化到数据库的代码
+            # 如: await self._persist_session_to_db(session_id, self.sessions[session_id])
+            # 然后删除会话
+            del self.sessions[session_id]
+            logger.info(f"[SESSION] 会话 {session_id} 已清理")
+        else:
+            # 这里应该是不会被触发的
+            logger.warning(f"[SESSION] 尝试清理不存在的会话 {session_id}")
     
     def create_session(self) -> str:
         """创建新会话"""
@@ -162,6 +222,7 @@ class SessionManager:
     def process_query(self, session_id: str, query_text: str, image=None) -> Dict:
         """处理查询"""
         # 获取或创建会话
+        logger.info(f"[SESSION] 创建新会话处理查询 {session_id} 内容: {query_text[:50]}")
         app = self.get_session(session_id)
         if not app:
             session_id = self.create_session()
@@ -182,5 +243,18 @@ class SessionManager:
         logger.debug(f"[SESSION] 返回会话 {session_id} 待处理消息 {len(messages)}条")
         return messages
 
-# 全局会话管理器实例
-session_manager = SessionManager()
+# 全局会话管理器实例 - 不再直接实例化
+_session_manager = None
+
+# 提供获取会话管理器的函数
+def get_session_manager() -> SessionManager:
+    """
+    获取会话管理器实例
+    
+    此函数确保会话管理器是一个全局单例
+    在FastAPI应用启动时调用初始化，关闭时调用清理
+    """
+    global _session_manager
+    if _session_manager is None:
+        _session_manager = SessionManager()
+    return _session_manager

@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 import json
 
-from app.services.session_service import session_manager
+from app.services.session_service import get_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ async def chat(
     
     # 如果没有会话ID，创建新会话
     if not effective_session_id:
-        effective_session_id = session_manager.create_session()
+        effective_session_id = get_session_manager().create_session()
     
     # 解析对话历史
     history = []
@@ -68,7 +68,7 @@ async def chat(
     
     # 处理消息
     query_text = message or "查询图片信息"
-    response = session_manager.process_query(
+    response = get_session_manager().process_query(
         effective_session_id, 
         query_text,
         image
@@ -88,25 +88,28 @@ async def get_messages(
     获取后端主动推送的消息
     
     返回指定会话中的待发送消息
-    如果没有提供会话ID，将返回空列表
+    如果没有提供会话ID，将返回400错误
+    如果会话ID无效或不存在，将返回404错误
     """
     # 优先使用Header中的会话ID(X-Session-ID)，其次使用Cookie中的session_id
-    # 这种设计允许前端通过Header或Cookie两种方式传递会话ID
     effective_session_id = x_session_id or session_id
     
-    # 如果没有有效的会话ID，直接返回空列表
-    # 这种情况通常发生在用户首次访问或会话过期时
+    # 如果没有有效的会话ID，返回400错误
     if not effective_session_id:
-        logger.warning("[MESSAGE] 无效会话ID请求消息")
-        return MessagesResponse(messages=[])
+        logger.warning("[MESSAGE] 请求消息但未提供会话ID")
+        raise HTTPException(status_code=400, detail="未提供会话ID")
+    
+    # 验证会话是否存在
+    app = get_session_manager().get_session(effective_session_id)
+    if not app:
+        logger.warning(f"[MESSAGE] 无效会话ID {effective_session_id} 请求消息")
+        raise HTTPException(status_code=404, detail="会话不存在或已过期")
     
     # 从session_manager获取该会话的待发送消息
-    # 这些消息可能是后端主动推送的通知或异步处理结果
-    pending_messages = session_manager.get_pending_messages(effective_session_id)
+    pending_messages = get_session_manager().get_pending_messages(effective_session_id)
     logger.info(f"[MESSAGE] 获取会话 {effective_session_id} 的待发消息，数量：{len(pending_messages)}")
     
     # 将原始消息字典列表转换为Message模型列表
-    # 这里进行数据格式转换，确保返回数据符合API规范
     messages = [
         Message(
             id=msg["id"],  # 消息唯一标识
@@ -117,8 +120,6 @@ async def get_messages(
     ]
     
     # 返回格式化后的消息列表
-    # has_more字段暂时固定为False，未来可分页实现
-    logger.debug(f"[MESSAGE] 返回消息列表：{messages}")
     return MessagesResponse(
         messages=messages,
         has_more=False

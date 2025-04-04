@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Cookie
 from typing import Dict, Optional
 from pydantic import BaseModel
 
-from app.services.session_service import session_manager
+from app.services.session_service import get_session_manager
 
 router = APIRouter()
 
@@ -25,7 +25,7 @@ async def create_session():
     
     每次创建新会话都会生成一个唯一的会话ID
     """
-    session_id = session_manager.create_session()
+    session_id = get_session_manager().create_session()
     return SessionResponse(
         session_id=session_id,
         message="会话创建成功"
@@ -41,7 +41,7 @@ async def session_status(session_id: Optional[str] = Cookie(None)):
     if not session_id:
         raise HTTPException(status_code=400, detail="未提供会话ID")
     
-    session = session_manager.get_session(session_id)
+    session = get_session_manager().get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在或已过期")
     

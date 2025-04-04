@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.api.api import api_router
 from app.core.config import settings
 from app.core.errors import CustomException
+from app.services.session_service import get_session_manager
 
 # 配置日志
 logging.basicConfig(
@@ -30,6 +31,33 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# 应用启动事件
+@app.on_event("startup")
+async def startup_event():
+    """
+    应用启动事件处理函数
+    - 初始化会话管理器
+    - 初始化其他资源
+    """
+    logger.info("应用启动中...")
+    # 初始化会话管理器 - 调用get_session_manager()会触发SessionManager的创建
+    get_session_manager()
+    logger.info("应用启动完成")
+
+# 应用关闭事件
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    应用关闭事件处理函数
+    - 清理会话管理器资源
+    - 清理其他资源
+    """
+    logger.info("应用关闭中...")
+    # 清理会话管理器资源
+    session_manager = get_session_manager()
+    await session_manager.cleanup_all()
+    logger.info("应用关闭完成")
 
 # 日志中间件：全局HTTP中间件，会在每次HTTP请求到达时触发
 @app.middleware("http")
