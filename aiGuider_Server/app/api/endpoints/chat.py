@@ -8,30 +8,14 @@
 import logging
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Cookie, Header
 from typing import Dict, List, Optional
-from pydantic import BaseModel
 import json
 
 from app.services.session_service import get_session_manager
+from app.schemas.responses import ChatResponse, Message, MessagesResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-class ChatResponse(BaseModel):
-    """聊天响应模型"""
-    reply: str
-    session_id: str
-
-class Message(BaseModel):
-    """消息模型"""
-    id: str
-    content: str
-    timestamp: str
-
-class MessagesResponse(BaseModel):
-    """消息列表响应模型"""
-    messages: List[Message]
-    has_more: bool = False
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(

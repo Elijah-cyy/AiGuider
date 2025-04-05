@@ -7,6 +7,7 @@ cd aiGuider_Client/web
 
 
 echo "使用Python启动Web服务器..."
+echo "在浏览器中访问 `http://localhost:8080`即可启动web前端"
 python -m http.server 8080
 
 # 脚本结束时提示

@@ -7,19 +7,12 @@ AR导游API端点
 
 from fastapi import APIRouter, Depends, HTTPException, Body
 from typing import Dict, Any
-from pydantic import BaseModel
 
 from app.services.ai_service import process_ar_query
 from app.schemas.responses import ARGuideResponse
+from app.schemas.requests import ARQuery
 
 router = APIRouter()
-
-class ARQuery(BaseModel):
-    """AR查询请求模型"""
-    query_text: str
-    location: Dict[str, float]  # 包含经纬度的位置信息
-    landmarks: list = []  # 识别到的地标列表
-    user_id: str = None  # 可选的用户ID
 
 @router.post("/query", response_model=ARGuideResponse)
 async def ar_guide_query(query: ARQuery = Body(...)):

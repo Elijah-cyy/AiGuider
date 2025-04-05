@@ -7,16 +7,11 @@
 
 from fastapi import APIRouter, HTTPException, Cookie
 from typing import Dict, Optional
-from pydantic import BaseModel
 
 from app.services.session_service import get_session_manager
+from app.schemas.responses import SessionResponse
 
 router = APIRouter()
-
-class SessionResponse(BaseModel):
-    """会话响应模型"""
-    session_id: str
-    message: str
 
 @router.post("/create", response_model=SessionResponse)
 async def create_session():
