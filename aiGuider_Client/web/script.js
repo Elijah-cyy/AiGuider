@@ -42,25 +42,25 @@ function setupEventListeners() {
         console.log('[Event] 提交聊天表单');
         handleChatSubmit(e);
     });
-    
+
     // 图片上传
     imageUpload.addEventListener('change', (e) => {
         console.log('[Event] 上传图片');
         handleImageUpload(e);
     });
-    
+
     // 移除图片
     removeImageBtn.addEventListener('click', (e) => {
         console.log('[Event] 移除图片');
         handleRemoveImage(e);
     });
-    
+
     // 清除对话
     clearChatBtn.addEventListener('click', async (e) => {
         console.log('[Event] 清除对话');
         await handleClearChat(e);
     });
-    
+
     // 测试连接
     testConnectionBtn.addEventListener('click', (e) => {
         console.log('[Event] 测试连接');
@@ -74,7 +74,7 @@ async function initSession() {
     // 从localStorage获取会话ID
     sessionId = localStorage.getItem('aiGuider_session_id');
     console.log('[会话] 当前存储的sessionId:', sessionId);
-    
+
     // 如果没有会话ID，创建新会话
     if (!sessionId) {
         try {
@@ -83,13 +83,13 @@ async function initSession() {
             const response = await fetch(`${apiUrl}/session/create`, {
                 method: 'POST'
             });
-            
+
             if (response.ok) {
                 const data = await response.json();
                 sessionId = data.session_id;
                 localStorage.setItem('aiGuider_session_id', sessionId);
                 console.log('[API] 创建新会话成功:', sessionId);
-                
+
                 // 创建会话成功后开始轮询
                 startPolling();
             }
@@ -105,32 +105,39 @@ async function initSession() {
 // 处理聊天表单提交
 async function handleChatSubmit(e) {
     e.preventDefault();
-    
+
     const userMessage = messageInput.value.trim();
-    if (!userMessage && !selectedImage) return;
-    
+    const imageToSend = selectedImage; // 捕获提交时的图片状态
+
+    if (!userMessage && !imageToSend) return; // 使用捕获的状态进行检查
+
     // 添加用户消息到聊天区
-    addMessage(userMessage, 'user', selectedImage);
-    
-    // 清空输入
+    addMessage(userMessage, 'user', imageToSend);
+
+    // 在将消息添加到UI后，立即清除输入框和预览状态
     messageInput.value = '';
-    handleRemoveImage();
-    
+    handleRemoveImage(); // 清除 selectedImage 状态和预览
+
+    let typingIndicator = null;
     try {
         // 显示AI正在输入的提示
-        const typingIndicator = addTypingIndicator();
-        
-        // 发送消息到后端
-        const response = await sendMessage(userMessage, selectedImage);
-        
-        // 移除输入提示
-        chatMessages.removeChild(typingIndicator);
-        
+        typingIndicator = addTypingIndicator();
+
+        // 发送消息到后端 (使用捕获的 imageToSend)
+        const response = await sendMessage(userMessage, imageToSend);
+
+        // 成功后移除输入提示
+        if (typingIndicator) chatMessages.removeChild(typingIndicator);
+
         // 添加AI回复到聊天区
         if (response && response.reply) {
             addMessage(response.reply, 'ai');
         }
     } catch (error) {
+        // 失败后移除输入提示
+        if (typingIndicator && chatMessages.contains(typingIndicator)) {
+             chatMessages.removeChild(typingIndicator);
+        }
         showError(`发送消息失败: ${error.message}`);
     }
 }
@@ -142,59 +149,59 @@ async function sendMessage(text, image = null) {
     if (!apiUrl) {
         throw new Error('请输入有效的后端服务地址');
     }
-    
+
     const formData = new FormData();
-    
+
     if (text) {
         formData.append('message', text);
     }
-    
+
     if (image) {
         formData.append('image', image);
     }
 
     // 添加对话历史
     formData.append('conversation_history', JSON.stringify(conversationHistory));
-    
+
     const startTime = Date.now();
-    
+
     try {
         const headers = {};
         if (sessionId) {
             headers['X-Session-ID'] = sessionId;
         }
-        
+
         console.log('[API] 发送消息会话ID:', sessionId);
         const response = await fetch(`${apiUrl}/chat`, {
             method: 'POST',
             headers: headers,
             body: formData
         });
-        
+
         const endTime = Date.now();
         updateResponseTime(endTime - startTime);
-        
+
         if (!response.ok) {
             throw new Error(`HTTP错误 ${response.status}`);
         }
-        
+
         const data = await response.json();
-        
+
         // 更新会话ID（如果后端返回了新的会话ID）
         if (data.session_id && data.session_id !== sessionId) {
             sessionId = data.session_id;
             localStorage.setItem('aiGuider_session_id', sessionId);
         }
-        
+
         // 更新对话历史
         if (text) {
             conversationHistory.push({ role: 'user', content: text });
         }
-        
+
         if (data.reply) {
             conversationHistory.push({ role: 'assistant', content: data.reply });
         }
-        
+
         saveConversationHistory();
         return data;
     } catch (error) {
@@ -206,7 +213,7 @@ async function sendMessage(text, image = null) {
 function addMessage(message, sender, image = null) {
     const messageElement = document.createElement('div');
     messageElement.className = `message ${sender}`;
-    
+
     // 添加文本内容
     if (message) {
         const textElement = document.createElement('div');
@@ -214,7 +221,7 @@ function addMessage(message, sender, image = null) {
         textElement.textContent = message;
         messageElement.appendChild(textElement);
     }
-    
+
     // 添加图片（如果有）
     if (image) {
         const reader = new FileReader();
@@ -227,15 +234,15 @@ function addMessage(message, sender, image = null) {
         }
         reader.readAsDataURL(image);
     }
-    
+
     // 添加时间
     const timeElement = document.createElement('div');
     timeElement.className = 'message-time';
     timeElement.textContent = new Date().toLocaleTimeString();
     messageElement.appendChild(timeElement);
-    
+
     chatMessages.appendChild(messageElement);
-    
+
     // 滚动到底部
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -244,17 +251,17 @@ function addMessage(message, sender, image = null) {
 function addTypingIndicator() {
     const typingElement = document.createElement('div');
     typingElement.className = 'message ai typing';
-    
+
     const dotsElement = document.createElement('div');
     dotsElement.className = 'typing-dots';
     dotsElement.innerHTML = '<span></span><span></span><span></span>';
-    
+
     typingElement.appendChild(dotsElement);
     chatMessages.appendChild(typingElement);
-    
+
     // 滚动到底部
     chatMessages.scrollTop = chatMessages.scrollHeight;
-    
+
     return typingElement;
 }
 
@@ -262,21 +269,21 @@ function addTypingIndicator() {
 function handleImageUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
-    
+
     // 检查文件类型
     if (!file.type.startsWith('image/')) {
         showError('请上传图片文件');
         return;
     }
-    
+
     // 检查文件大小（限制为5MB）
     if (file.size > 5 * 1024 * 1024) {
         showError('图片大小不能超过5MB');
         return;
     }
-    
+
     selectedImage = file;
-    
+
     // 显示图片预览
     const reader = new FileReader();
     reader.onload = function(e) {
@@ -301,15 +308,15 @@ async function handleClearChat(e) {
         chatMessages.innerHTML = '';
         conversationHistory = [];
         saveConversationHistory();
-        
+
         // 重置会话ID并重新初始化
         sessionId = null;
         localStorage.removeItem('aiGuider_session_id');
         console.log('[会话] 已清除旧会话ID');
-        
+
         // 创建新会话
         await initSession();
-        
+
         // 清除后重新启动轮询
         if (isConnected && sessionId) {
             startPolling();
@@ -325,24 +332,24 @@ async function testConnection() {
         showError('请输入有效的后端服务地址');
         return;
     }
-    
+
     try {
         const startTime = Date.now();
         const response = await fetch(`${apiUrl}/health`, {
             method: 'GET'
         });
         const endTime = Date.now();
-        
+
         if (response.ok) {
             updateConnectionStatus(true);
             updateResponseTime(endTime - startTime);
             hideError();
-            
+
             // 如果连接成功但尚未初始化会话，则初始化会话
             if (!sessionId) {
                 await initSession();
             }
-            
+
             // 确保轮询已启动
             if (isConnected && !pollingInterval) {
                 startPolling();
@@ -362,7 +369,7 @@ function updateConnectionStatus(connected) {
     isConnected = connected;
     statusValue.textContent = connected ? '已连接' : '未连接';
     statusValue.className = connected ? 'status-value connected' : 'status-value disconnected';
-    
+
     // 连接断开时停止轮询
     if (!connected && pollingInterval) {
         clearInterval(pollingInterval);
@@ -379,7 +386,7 @@ function updateResponseTime(timeMs) {
 function showError(message) {
     errorMessage.textContent = message;
     errorContainer.classList.remove('hidden');
-    
+
     // 5秒后自动隐藏
     setTimeout(() => {
         hideError();
@@ -397,7 +404,7 @@ function saveConversationHistory() {
     if (conversationHistory.length > 50) {
         conversationHistory = conversationHistory.slice(-50);
     }
-    
+
     localStorage.setItem('aiGuider_conversation', JSON.stringify(conversationHistory));
 }
 
@@ -407,7 +414,7 @@ function loadConversationHistory() {
     if (savedHistory) {
         try {
             conversationHistory = JSON.parse(savedHistory);
-            
+
             // 恢复聊天界面
             conversationHistory.forEach(item => {
                 if (item.role === 'user') {
@@ -430,28 +437,28 @@ function startPolling() {
         clearInterval(pollingInterval);
         pollingInterval = null;
     }
-    
+
     // 仅在连接有效时启动新轮询
     if (isConnected && sessionId) {
         pollingInterval = setInterval(async () => {
             try {
                 const apiUrl = serverUrlInput.value.trim();
                 const headers = {};
-                
+
                 if (sessionId) {
                     headers['X-Session-ID'] = sessionId;
                 }
-                
+
                 console.log('[轮询] 请求消息接口', { time: new Date().toISOString(), sessionId });
                 const response = await fetch(`${apiUrl}/messages`, {
                     method: 'GET',
                     headers: headers
                 });
                 console.log('[轮询] 收到响应', { status: response.status });
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    
+
                     if (data.messages && data.messages.length > 0) {
                         console.log('[轮询] 收到消息', {
                             count: data.messages.length,
@@ -462,7 +469,7 @@ function startPolling() {
                             addMessage(msg.content, 'ai');
                             conversationHistory.push({ role: 'assistant', content: msg.content });
                         });
-                        
+
                         saveConversationHistory();
                     } else {
                         console.log('[轮询] 没有新消息');

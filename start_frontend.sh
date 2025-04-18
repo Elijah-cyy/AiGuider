@@ -11,4 +11,4 @@ echo "在浏览器中访问 `http://localhost:8080`即可启动web前端"
 python -m http.server 8080
 
 # 脚本结束时提示
-echo "Web服务器已关闭" 
+echo "Web服务器已关闭"

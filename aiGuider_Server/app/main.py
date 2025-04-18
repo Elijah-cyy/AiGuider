@@ -65,7 +65,7 @@ async def log_requests(request: Request, call_next):
     print(f"---------------------------------------------------------------------------")
     logger.info(f"请求开始: {request.method} {request.url}")
     logger.debug(f"请求头: {dict(request.headers)}")
-    
+
     try:
         response = await call_next(request)
         logger.info(f"请求完成: {request.method} {request.url} 状态码: {response.status_code}")

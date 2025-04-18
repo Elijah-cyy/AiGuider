@@ -26,25 +26,25 @@ class AIApplication:
         self.message_interval = random.randint(5, 10)  # 主动发消息的间隔(秒)
         self.last_proactive_time = time.time()
         self.MAX_PENDING_MESSAGES = 2  # 最多允许2条待处理的主动消息
-        
+
         # 初始化主动消息任务，并保存任务引用以便后续取消
         self._task = asyncio.create_task(self._generate_proactive_messages())
-    
+
     def cleanup(self):
         """清理资源，取消后台任务"""
         if hasattr(self, '_task') and not self._task.done():
             self._task.cancel()
             logger.info(f"[SESSION] 会话 {self.session_id} 的消息生成协程已取消")
-    
+
     async def _generate_proactive_messages(self):
         """生成主动消息的协程"""
         try:
             while True:
                 await asyncio.sleep(self.message_interval)
                 current_time = time.time()
-                
+
                 # 检查是否应该生成新消息，并确保待处理消息不超过最大限制
-                if (current_time - self.last_proactive_time >= self.message_interval and 
+                if (current_time - self.last_proactive_time >= self.message_interval and
                         len(self.pending_messages) < self.MAX_PENDING_MESSAGES):
                     proactive_message = self._create_proactive_message()
                     if proactive_message:
@@ -59,7 +59,7 @@ class AIApplication:
             logger.info(f"[SESSION] 会话 {self.session_id} 的消息生成协程已停止")
         except Exception as e:
             logger.error(f"[SESSION] 会话 {self.session_id} 的消息生成协程出错: {str(e)}")
-    
+
     def _create_proactive_message(self) -> Optional[str]:
         """创建一条主动消息"""
         proactive_messages = [
@@ -73,33 +73,33 @@ class AIApplication:
             "我发现您对历史建筑很感兴趣，这个区域有一个不太知名但很有价值的历史遗迹。"
         ]
         return random.choice(proactive_messages)
-    
+
     def process_query(self, query_text: str, image=None) -> Dict:
         """处理用户查询"""
         self.last_active = datetime.now()
-        
+
         # 记录对话历史
         self.conversation_history.append({
             "role": "user",
             "content": query_text,
             "timestamp": datetime.now().isoformat()
         })
-        
+
         # 简单的回复逻辑，实际项目中会调用更复杂的AI服务
         response = self._generate_response(query_text, image)
-        
+
         # 记录系统回复
         self.conversation_history.append({
             "role": "assistant",
             "content": response,
             "timestamp": datetime.now().isoformat()
         })
-        
+
         return {
             "reply": response,
             "session_id": self.session_id
         }
-    
+
     def _generate_response(self, query_text: str, image=None) -> str:
         """生成回复内容"""
         # 这里是简单的模拟回复，真实场景下会接入LLM或知识图谱
@@ -111,7 +111,7 @@ class AIApplication:
                 f"这张照片展示的是一座具有典型地方特色的建筑，设计融合了现代与传统元素。"
             ]
             return random.choice(image_responses)
-        
+
         # 关键词响应
         if "历史" in query_text or "文化" in query_text:
             return f"关于{query_text}，这个地区的历史可以追溯到明清时期，有着丰富的文化遗产和历史故事。"
@@ -121,7 +121,7 @@ class AIApplication:
             return f"附近有几个值得参观的景点，包括历史博物馆、古城墙和艺术区。我可以为您规划一条最优游览路线。"
         elif "交通" in query_text or "路线" in query_text:
             return f"从当前位置到目的地，您可以乘坐公交102路，约15分钟到达。或者步行约25分钟，沿途可以欣赏城市风光。"
-        
+
         # 默认回复
         general_responses = [
             f"您询问的是关于'{query_text}'的信息。根据当前位置和上下文，我推荐您可以...",
@@ -130,7 +130,7 @@ class AIApplication:
             f"关于'{query_text}'的问题很有见地。从历史角度来看，这个地方...",
         ]
         return random.choice(general_responses)
-    
+
     def get_pending_messages(self) -> List[Dict]:
         """获取并清空待发送的主动消息"""
         messages = self.pending_messages.copy()
@@ -142,10 +142,10 @@ class SessionManager:
     def __init__(self):
         self.sessions: Dict[str, AIApplication] = {}
         self.cleanup_interval = 3600  # 清理过期会话的间隔(秒)
-        
+
         # 启动定期清理任务并保存引用，便于后续取消
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_sessions())
-    
+
     async def _cleanup_expired_sessions(self):
         """定期清理过期会话"""
         try:
@@ -153,12 +153,12 @@ class SessionManager:
                 await asyncio.sleep(self.cleanup_interval)
                 current_time = datetime.now()
                 expired_sessions = []
-                
+
                 for session_id, app in self.sessions.items():
                     # 超过4小时未活动的会话视为过期
                     if (current_time - app.last_active).total_seconds() > 14400:
                         expired_sessions.append(session_id)
-                
+
                 # 删除过期会话
                 for session_id in expired_sessions:
                     await self.cleanup_session(session_id)
@@ -166,7 +166,7 @@ class SessionManager:
             logger.info("[SESSION] 会话管理器的清理协程已停止")
         except Exception as e:
             logger.error(f"[SESSION] 会话管理器的清理协程出错: {str(e)}")
-    
+
     async def cleanup_all(self):
         """
         清理所有会话资源和管理器自身资源，用于应用关闭时调用
@@ -179,20 +179,20 @@ class SessionManager:
                 await asyncio.wait_for(self._cleanup_task, timeout=5.0)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 logger.warning("[SESSION] 等待清理协程取消超时")
-        
+
         # 清理所有会话
         session_ids = list(self.sessions.keys())
         for session_id in session_ids:
             await self.cleanup_session(session_id)
-        
+
         logger.info("[SESSION] 所有会话和管理器资源已清理完成")
-    
+
     async def cleanup_session(self, session_id: str):
         """
         清理会话并释放资源
-        
+
         目前实现为直接删除会话，将来可修改为持久化到数据库
-        
+
         Args:
             session_id: 要清理的会话ID
         """
@@ -207,18 +207,18 @@ class SessionManager:
         else:
             # 这里应该是不会被触发的
             logger.warning(f"[SESSION] 尝试清理不存在的会话 {session_id}")
-    
+
     def create_session(self) -> str:
         """创建新会话"""
         session_id = str(uuid.uuid4())
         self.sessions[session_id] = AIApplication(session_id)
         logger.info(f"[SESSION] 创建新会话 {session_id}")
         return session_id
-    
+
     def get_session(self, session_id: str) -> Optional[AIApplication]:
         """获取会话实例"""
         return self.sessions.get(session_id)
-    
+
     def process_query(self, session_id: str, query_text: str, image=None) -> Dict:
         """处理查询"""
         # 获取或创建会话
@@ -228,17 +228,17 @@ class SessionManager:
             session_id = self.create_session()
             app = self.get_session(session_id)
             logger.info(f"[SESSION] 创建新会话处理查询 {session_id} 内容: {query_text[:50]}")
-        
+
         # 处理查询
         return app.process_query(query_text, image)
-    
+
     def get_pending_messages(self, session_id: str) -> List[Dict]:
         """获取待发送的主动消息"""
         app = self.get_session(session_id)
         if not app:
             logger.warning(f"[SESSION] 无效会话ID {session_id} 请求消息")
             return []
-        
+
         messages = app.get_pending_messages()
         logger.debug(f"[SESSION] 返回会话 {session_id} 待处理消息 {len(messages)}条")
         return messages
@@ -250,7 +250,7 @@ _session_manager = None
 def get_session_manager() -> SessionManager:
     """
     获取会话管理器实例
-    
+
     此函数确保会话管理器是一个全局单例
     在FastAPI应用启动时调用初始化，关闭时调用清理
     """
