@@ -1,5 +1,5 @@
 # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
-venv/
+.venv/
 后端环境安装指南.md
 start_frontend.sh
 start_backend.sh
