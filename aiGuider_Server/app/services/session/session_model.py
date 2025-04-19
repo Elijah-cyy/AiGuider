@@ -28,7 +28,7 @@ class AIApplication:
         self.last_proactive_time = time.time()
         self.MAX_PENDING_MESSAGES = 2  # 最多允许2条待处理的主动消息
 
-        # 初始化主动消息任务，并保存任务引用以便后续取消
+        # 初始化一个协程，用于主动消息任务
         self._task = asyncio.create_task(self._generate_proactive_messages())
 
     def cleanup(self):

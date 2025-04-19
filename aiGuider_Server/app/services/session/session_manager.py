@@ -22,7 +22,7 @@ class SessionManager:
         self.sessions: Dict[str, AIApplication] = {}
         self.cleanup_interval = 3600  # 清理过期会话的间隔(秒)
 
-        # 启动定期清理任务并保存引用，便于后续取消
+        # 创建一个协程，用于启动定期清理任务并保存引用，便于后续取消
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_sessions())
 
     async def _cleanup_expired_sessions(self):
