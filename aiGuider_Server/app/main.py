@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from app.api.api import api_router
 from app.core.config import settings
 from app.core.errors import CustomException
-from app.services.session_service import get_session_manager
+from app.services import get_session_manager
 
 # 配置日志
 logging.basicConfig(

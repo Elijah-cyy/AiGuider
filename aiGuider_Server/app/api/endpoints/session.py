@@ -8,7 +8,7 @@
 from fastapi import APIRouter, HTTPException, Cookie
 from typing import Dict, Optional
 
-from app.services.session_service import get_session_manager
+from app.services import get_session_manager
 from app.schemas.responses import SessionResponse
 
 router = APIRouter()

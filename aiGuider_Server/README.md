@@ -43,9 +43,14 @@ aiGuider_Server/
 │   │   └── responses.py     # API响应模型
 │   │
 │   ├── services/            # 业务逻辑层（核心代码）
-│   │   ├── __init__.py
-│   │   ├── ai_service.py    # AI服务实现（LangGraph核心逻辑）
-│   │   └── session_service.py  # 会话管理服务
+│   │   ├── __init__.py      # 服务层入口
+│   │   ├── session/         # 会话管理服务模块
+│   │   │   ├── __init__.py
+│   │   │   ├── session_model.py    # 会话数据模型
+│   │   │   └── session_manager.py  # 会话管理器
+│   │   └── ar/              # AR服务模块
+│   │       ├── __init__.py
+│   │       └── ar_query_service.py # AR查询服务
 │   │
 │   ├── db/                  # 数据库层
 │   │   ├── __init__.py

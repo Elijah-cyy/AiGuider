@@ -40,7 +40,7 @@
    - 通过session_manager验证会话有效性
 3. 消息获取
    - 调用session_manager.get_pending_messages()获取待处理消息
-   - 消息来自session_service中的pending_messages队列
+   - 消息来自session服务中的AIApplication实例的pending_messages队列
 4. 响应生成
    - 构造MessagesResponse对象 (定义于 `app/api/endpoints/chat.py`)
    - 序列化为JSON格式返回

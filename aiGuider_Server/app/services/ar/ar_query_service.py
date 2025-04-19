@@ -2,10 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-AI服务模块 (暂用print替代实际实现)
+AR查询服务 - 处理AR相关的查询请求
 """
 
 from typing import Dict, List, Any, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 async def process_ar_query(
     query_text: str,
@@ -26,10 +29,9 @@ async def process_ar_query(
         包含响应文本和相关信息的字典
     """
     # 暂时用print替代实际的LangGraph处理逻辑
-    print(123)
-    print(f"处理查询: {query_text}")
-    print(f"用户位置: {location}")
-    print(f"识别地标: {landmarks}")
+    logger.info(f"处理AR查询: {query_text}")
+    logger.info(f"用户位置: {location}")
+    logger.info(f"识别地标: {landmarks}")
     
     # 返回模拟响应
     return {

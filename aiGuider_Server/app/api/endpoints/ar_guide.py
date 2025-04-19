@@ -8,7 +8,7 @@ AR导游API端点
 from fastapi import APIRouter, Depends, HTTPException, Body
 from typing import Dict, Any
 
-from app.services.ai_service import process_ar_query
+from app.services import process_ar_query
 from app.schemas.responses import ARGuideResponse
 from app.schemas.requests import ARQuery
 

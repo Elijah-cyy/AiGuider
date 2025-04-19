@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Cookie, He
 from typing import Dict, List, Optional
 import json
 
-from app.services.session_service import get_session_manager
+from app.services import get_session_manager
 from app.schemas.responses import ChatResponse, Message, MessagesResponse
 
 logger = logging.getLogger(__name__)
