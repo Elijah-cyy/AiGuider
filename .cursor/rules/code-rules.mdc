@@ -1,8 +1,9 @@
 ---
-description: 
+description: 项目代码的背景和Ai生成代码时必须遵守的规范
 globs: 
-alwaysApply: true
+alwaysApply: false
 ---
+
 # 项目背景
 这是一个正在开发状态的基于Android/Unity和FastAPI的AR智能导游眼镜的前后端系统，整合多模态感知、大语言模型（LLM）和知识图谱技术，实现低延迟的实时交互。项目包含AR眼镜客户端、Python后端服务和多模态AI模型部署，本规则只是项目蓝图，要求生成代码务必遵守这个规则，当前项目真实代码并非完全实现了所有技术细节。
 
