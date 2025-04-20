@@ -78,7 +78,7 @@ class AIApplication:
         ]
         return random.choice(proactive_messages)
 
-    def process_query(self, query_text: str, image=None) -> Dict:
+    async def process_query(self, query_text: str, image=None) -> Dict:
         """处理用户查询"""
         self.last_active = datetime.now()
 
@@ -89,8 +89,7 @@ class AIApplication:
             "timestamp": datetime.now().isoformat()
         })
 
-        # 简单的回复逻辑，实际项目中会调用更复杂的AI服务
-        response = self._generate_response(query_text, image)
+        response = await self._generate_response(query_text, image)
 
         # 记录系统回复
         self.conversation_history.append({
@@ -104,7 +103,7 @@ class AIApplication:
             "session_id": self.session_id
         }
 
-    def _generate_response(self, query_text: str, image=None) -> str:
+    async def _generate_response(self, query_text: str, image=None) -> str:
         """生成回复内容"""
         # 控制是否使用原始逻辑的标志，可以后续修改为配置项
         use_original_logic = False
@@ -141,22 +140,13 @@ class AIApplication:
         else:
             # 使用LangGraph Agent处理请求
             try:
-                # 必须使用事件循环运行异步函数
-                loop = asyncio.get_event_loop()
-                # 如果事件循环已关闭，创建新的事件循环
-                if loop.is_closed():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                
-                # 调用异步函数处理查询
-                result = loop.run_until_complete(
-                    process_multimodal_query(
-                        text_query=query_text,
-                        image_data=image,
-                        session_id=self.session_id
-                    )
+                # 直接调用异步函数处理查询
+                result = await process_multimodal_query(
+                    text_query=query_text,
+                    image_data=image,
+                    session_id=self.session_id
                 )
-                
+
                 # 从结果中提取响应
                 if result and "response" in result:
                     return result["response"]

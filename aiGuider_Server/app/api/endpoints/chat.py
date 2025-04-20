@@ -53,7 +53,7 @@ async def chat(
 
     # 处理消息
     query_text = message or "查询图片信息"
-    response = get_session_manager().process_query(
+    response = await get_session_manager().process_query(
         effective_session_id,
         query_text,
         image
