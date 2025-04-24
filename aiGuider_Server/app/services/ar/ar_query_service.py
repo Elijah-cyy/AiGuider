@@ -10,6 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 暂时未使用，这是有坐标的接口
 async def process_ar_query(
     query_text: str,
     location: Dict[str, float],
