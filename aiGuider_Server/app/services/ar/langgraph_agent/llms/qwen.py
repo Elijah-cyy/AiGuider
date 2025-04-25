@@ -82,7 +82,6 @@ class QwenVLModel(BaseChatModel):
                 streaming=config.streaming,
                 model_kwargs=config.model_kwargs or {},
             )
-            logger.info(f"通义千问模型 (ChatTongyi) 初始化成功: {config.model_name}")
         except Exception as e:
             error_message = f"通义千问模型 (ChatTongyi) 客户端初始化失败: {e}"
             logger.error(f"{error_message} [错误码: {ErrorCodes.MODEL_INIT_FAILED}]", exc_info=True)
