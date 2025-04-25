@@ -1,18 +1,22 @@
 {
     "qwen2.5-vl": {
-        "model_name": "Qwen2.5-VL",
+        "description": "Qwen2.5-VL在Qwen2-VL的基础上做了如下改进：\n1. 感知更丰富的世界：Qwen2.5-VL不仅擅长识别常见物体，如花、鸟、鱼和昆虫等，还能分析图像中的文本、图表、图标、图形和布局等。\n2. 长视频理解能力：支持对长视频文件（最长10分钟）进行理解，具备通过精准定位相关视频片段来捕捉事件的新能力\n3. 视觉定位：Qwen2.5-VL可通过生成bounding box（矩形框的左上角和右下角坐标）或者point（矩形框的中心点坐标）来准确定位图像中的物体，并能够为坐标和属性提供稳定的JSON输出。\n4. 结构化输出：可支持对发票、表单、表格等数据进行结构化输出，惠及金融、商业等领域的应用。",
+        "model_name": "qwen2.5-vl-32b-instruct",
         "temperature": 0.7,
         "max_tokens": 1024,
-        "api_key": null,
-        "api_base": null,
+        "top_p": 0.8,
+        "streaming": false,
+        "dashscope_api_key": "sk-17bdfe3406ef48608f062440bad3acf2",
         "model_kwargs": {}
     },
     "qwen2.0-vl": {
+        "description": "基础视觉语言模型",
         "model_name": "Qwen2-VL",
         "temperature": 0.1,
-        "max_tokens": 11,
-        "api_key": null,
-        "api_base": null,
+        "max_tokens": 1024,
+        "top_p": 0.8,
+        "streaming": false,
+        "dashscope_api_key": null,
         "model_kwargs": {}
     }
-} 
+}

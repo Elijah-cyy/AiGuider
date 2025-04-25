@@ -125,6 +125,20 @@ source venv/bin/activate  # Windows下使用: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+3.1. **配置通义千问 API Key (重要)**
+
+   后端服务依赖通义千问模型。请配置 API Key：
+   *   **推荐方式：** 设置环境变量 `DASHSCOPE_API_KEY` 为您的 Key。
+     ```bash
+     # Linux/macOS
+     export DASHSCOPE_API_KEY="你的通义千问API Key"
+     # Windows (PowerShell)
+     # $env:DASHSCOPE_API_KEY="你的通义千问API Key"
+     ```
+   *   **备选方式：** 修改配置文件 `aiGuider_Server/app/services/ar/langgraph_agent/config/model_configs.json` 中的 `api_key` 字段。
+
+   请将 `"你的通义千问API Key"` 替换为您的真实 Key。
+
 4. 启动服务
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
