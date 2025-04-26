@@ -9,8 +9,10 @@ import logging
 import copy
 
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langgraph.graph import END
 from ..tools.image_analyzer import ImageAnalyzer
 from ..tools.knowledge_retriever import KnowledgeRetriever
+from .graph import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -224,3 +226,107 @@ def generate_response(
         new_state["response"] = "抱歉，我在处理您的请求时遇到了问题。请稍后再试。"
     
     return new_state 
+
+def image_analyzer_node(state: AgentState) -> Dict[str, Any]:
+    """
+    图像分析节点包装函数
+    
+    Args:
+        state: 当前状态
+        
+    Returns:
+        Dict: 更新后的状态
+    """
+    logger.info("执行图像分析节点")
+    try:
+        # 从状态上下文中获取图像分析器
+        image_analyzer = state.get("_tools", {}).get("image_analyzer")
+        if not image_analyzer:
+            raise ValueError("图像分析器未在状态中找到")
+            
+        state_update = analyze_image(state, image_analyzer)
+        state_update["current_step"] = "image_analysis_complete"
+        return state_update
+    except Exception as e:
+        logger.error(f"图像分析失败: {str(e)}")
+        return {
+            "error": f"图像分析错误: {str(e)}",
+            "current_step": "error"
+        }
+
+def knowledge_retriever_node(state: AgentState) -> Dict[str, Any]:
+    """
+    知识检索节点包装函数
+    
+    Args:
+        state: 当前状态
+        
+    Returns:
+        Dict: 更新后的状态
+    """
+    logger.info("执行知识检索节点")
+    try:
+        # 从状态上下文中获取知识检索器
+        knowledge_retriever = state.get("_tools", {}).get("knowledge_retriever")
+        if not knowledge_retriever:
+            raise ValueError("知识检索器未在状态中找到")
+            
+        state_update = retrieve_knowledge(state, knowledge_retriever)
+        state_update["current_step"] = "knowledge_retrieval_complete"
+        return state_update
+    except Exception as e:
+        logger.error(f"知识检索失败: {str(e)}")
+        return {
+            "error": f"知识检索错误: {str(e)}",
+            "current_step": "error"
+        }
+
+def response_generator_node(state: AgentState) -> Dict[str, Any]:
+    """
+    回复生成节点包装函数
+    
+    Args:
+        state: 当前状态
+        
+    Returns:
+        Dict: 更新后的状态
+    """
+    logger.info("执行回复生成节点")
+    try:
+        # 从状态上下文中获取语言模型
+        model = state.get("_tools", {}).get("model")
+        if not model:
+            raise ValueError("语言模型未在状态中找到")
+            
+        state_update = generate_response(state, model)
+        state_update["current_step"] = "response_complete"
+        return state_update
+    except Exception as e:
+        logger.error(f"生成回复失败: {str(e)}")
+        return {
+            "error": f"生成回复错误: {str(e)}",
+            "current_step": "error"
+        }
+
+def error_handler_node(state: AgentState) -> Dict[str, Any]:
+    """
+    错误处理节点
+    
+    Args:
+        state: 当前状态
+        
+    Returns:
+        Dict: 更新后的状态
+    """
+    logger.error(f"执行错误处理: {state.get('error', '未知错误')}")
+    
+    error_message = state.get("error", "处理请求时发生未知错误")
+    
+    # 创建一个错误响应
+    messages = state.get("messages", [])
+    messages.append(AIMessage(content=f"抱歉，我在处理您的请求时遇到了问题: {error_message}"))
+    
+    return {
+        "messages": messages,
+        "current_step": "complete"
+    } 

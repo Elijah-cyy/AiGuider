@@ -17,7 +17,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from .config.model_config import load_model_config, ConfigError
-from .graph.builder import build_agent_graph
+from .graph.graph import build_agent_graph
 from .llms.qwen import get_qwen_model
 from .tools.image_analyzer import ImageAnalyzer
 from .tools.knowledge_retriever import KnowledgeRetriever
