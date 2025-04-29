@@ -1,140 +1,73 @@
 """
 图构建器
 
-构建LangGraph流程图的模块，仅负责图结构和流程的构建。
+构建LangGraph流程图的模块，实现ReAct模式的多模态Agent。
 """
 
-from typing import Any, Optional, Dict
+from typing import Dict, Any, Optional, List
 import logging
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langchain_core.messages import BaseMessage, SystemMessage, AIMessage
 
-from .state import AgentState # Import from new state module
+from .state import AgentState
 from .nodes import (
-    agent_node,
-    tools_node,
+    thinker_node,
+    router_node,
+    action_executor_node,
     error_handler_node
 )
 
 logger = logging.getLogger(__name__)
 
-# ReAct模式路由函数
-def should_continue(state: AgentState) -> str:
-    """
-    检查是否需要继续工具调用循环
-    
-    Args:
-        state: 当前状态
-        
-    Returns:
-        str: 下一个节点的名称 ("continue", "end" 或 "error")
-    """
-    # 检查是否有错误
-    if "error" in state and state["error"]:
-        return "error"
-    
-    # 获取消息列表
-    messages = state.get("messages", [])
-    
-    # 如果没有消息，无法继续
-    if not messages:
-        return "end"
-    
-    # 获取最后一条消息
-    last_message = messages[-1]
-    
-    # 检查是否是AI消息且包含工具调用
-    if isinstance(last_message, AIMessage) and hasattr(last_message, 'tool_calls') and last_message.tool_calls:
-        return "continue"
-    else:
-        return "end"
-
-def init_tools_node(state: AgentState, model: Any, image_analyzer: Any, knowledge_retriever: Any) -> Dict[str, Any]:
-    """
-    初始化工具节点
-    
-    将模型和工具添加到状态中
-    
-    Args:
-        state: 当前状态
-        model: 语言模型
-        image_analyzer: 图像分析器
-        knowledge_retriever: 知识检索器
-        
-    Returns:
-        Dict: 更新后的状态
-    """
-    logger.info("初始化工具")
-    
-    # 创建状态的副本
-    new_state = state.copy()
-    
-    # 添加工具到状态
-    tools = new_state.get("_tools", {})
-    tools["model"] = model
-    tools["image_analyzer"] = image_analyzer
-    tools["knowledge_retriever"] = knowledge_retriever
-    new_state["_tools"] = tools
-    
-    return new_state
-
-def build_agent_graph(
-    model: Any,
-    image_analyzer: Any,
-    knowledge_retriever: Any,
-    system_prompt: Optional[str],
-    checkpointer: Optional[BaseCheckpointSaver]
+def create_agent(
+    multimodal_model: Any, 
+    knowledge_searcher: Any,
+    checkpointer: Optional[BaseCheckpointSaver] = None
 ) -> StateGraph:
     """
-    构建Agent处理流程图
+    创建一个完整配置的多模态Agent
     
-    使用ReAct模式构建LangGraph循环流程，实现Agent的思考-行动循环
+    使用ReAct模式构建LangGraph循环流程
     
     Args:
-        model: 语言模型
-        image_analyzer: 图像分析器
-        knowledge_retriever: 知识检索器
-        system_prompt: 系统提示
-        checkpointer: 检查点存储器
+        multimodal_model: 多模态语言模型，能够直接分析图像内容
+        knowledge_searcher: 知识搜索工具，整合知识图谱和向量检索
+        checkpointer: 检查点存储器，用于状态持久化
         
     Returns:
-        StateGraph: 构建好的状态图
+        StateGraph: 构建好的Agent图
     """
     # 创建工作流图
     workflow = StateGraph(AgentState)
     
-    # 创建工具初始化函数，绑定所需参数
-    def init_tools(state: AgentState) -> Dict[str, Any]:
-        return init_tools_node(state, model, image_analyzer, knowledge_retriever)
+    # 构建工具字典
+    tools = {
+        "knowledge_search": knowledge_searcher
+    }
     
-    # 添加节点
-    workflow.add_node("init", init_tools)
-    workflow.add_node("agent", agent_node)
-    workflow.add_node("tools", tools_node)
-    workflow.add_node("error_handler", error_handler_node)
+    # 添加所有节点
+    workflow.add_node("thinker", lambda state: thinker_node(state, multimodal_model))  # 核心思考节点
+    workflow.add_node("action_executor", lambda state: action_executor_node(state, tools))  # 工具执行节点
+    workflow.add_node("error_handler", error_handler_node)  # 错误处理节点
     
-    # 设置入口点为初始化节点
-    workflow.set_entry_point("init")
+    # 设置入口点为思考节点
+    workflow.set_entry_point("thinker")
     
-    # 初始化完成后进入agent节点
-    workflow.add_edge("init", "agent")
-    
-    # 添加条件边
+    # 思考节点 -> 条件路由
     workflow.add_conditional_edges(
-        "agent",
-        should_continue,
+        "thinker",
+        router_node,
         {
-            "continue": "tools", 
-            "end": END,
-            "error": "error_handler"
+            "action_executor": "action_executor",  # 如果需要执行工具
+            "end": END,  # 如果可以直接生成回答或忽略
+            "error_handler": "error_handler"  # 如果发生错误
         }
     )
     
-    # 工具节点执行后回到agent节点，形成循环
-    workflow.add_edge("tools", "agent")
+    # 工具执行节点 -> 思考节点（形成循环）
+    workflow.add_edge("action_executor", "thinker")
     
-    # 错误处理后结束
+    # 错误处理节点 -> 结束
     workflow.add_edge("error_handler", END)
     
     # 编译图

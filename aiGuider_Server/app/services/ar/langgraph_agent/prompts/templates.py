@@ -4,7 +4,8 @@
 用于加载和管理提示模板的模块
 """
 
-from .tour_guide import TOUR_GUIDE_PROMPT
+from .thinker import THINKER_PROMPT
+from .system import SYSTEM_PROMPT
 
 def load_system_prompt() -> str:
     """
@@ -13,5 +14,14 @@ def load_system_prompt() -> str:
     Returns:
         str: 系统提示内容
     """
-    # 直接返回导入的提示词内容
-    return TOUR_GUIDE_PROMPT 
+    # 使用系统整体提示词
+    return SYSTEM_PROMPT
+
+def load_thinker_prompt() -> str:
+    """
+    加载Thinker节点提示词
+    
+    Returns:
+        str: Thinker节点提示词内容
+    """
+    return THINKER_PROMPT 

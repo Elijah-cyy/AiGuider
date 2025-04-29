@@ -1,543 +1,233 @@
 """
-图节点定义
+节点实现
 
-定义LangGraph流程图中的节点函数
+定义LangGraph Agent流程图的所有节点函数
 """
 
-from typing import Dict, Any, List, Optional
 import logging
-import copy
+from typing import Dict, Any, List, Tuple, Optional
+from datetime import datetime
 
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langgraph.graph import END
-from ..tools.image_analyzer import ImageAnalyzer
-from ..tools.knowledge_retriever import KnowledgeRetriever
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
+
 from .state import AgentState
+from ..prompts.templates import load_thinker_prompt
 
 logger = logging.getLogger(__name__)
 
-def analyze_image(
-    state: Dict[str, Any],
-    image_analyzer: ImageAnalyzer
-) -> Dict[str, Any]:
+def thinker_node(state: AgentState, multimodal_model: Any) -> Dict[str, Any]:
     """
-    分析图像节点
+    核心思考节点
     
-    从状态中提取图像，使用图像分析器进行分析
+    分析多模态输入，决定是否需要响应，判断是直接回答还是调用工具
     
     Args:
         state: 当前状态
-        image_analyzer: 图像分析器
+        multimodal_model: 多模态语言模型
         
     Returns:
-        Dict: 更新后的状态
+        更新后的状态，包含思考结果
     """
-    logger.info("开始分析图像")
+    logger.info("思考节点执行")
     
-    # 创建状态的副本，避免直接修改原始状态
-    new_state = copy.deepcopy(state)
+    # 初始化处理时间（原start_node功能）
+    state.last_interaction_time = datetime.now()
     
-    # 从状态中获取消息
-    messages = new_state.get("messages", [])
+    if not state.messages:
+        logger.warning("消息为空，无法执行思考节点")
+        return {**state.model_dump(), "final_answer": "无法处理空消息"}
     
-    # 检查是否有用户消息
-    user_messages = [m for m in messages if isinstance(m, HumanMessage)]
-    if not user_messages:
-        logger.warning("没有找到用户消息")
-        new_state["image_analysis_result"] = ""
-        return new_state
+    # 获取最新的用户消息和多模态输入
+    last_message = state.messages[-1]
+    input_data = state.current_input
     
-    # 获取最后一条用户消息
-    last_user_msg = user_messages[-1]
+    # 直接使用传入的多模态模型，不从状态中获取
+    if not multimodal_model:
+        logger.error("未找到多模态模型")
+        return {**state.model_dump(), "safety_issues": ["未找到多模态模型"]}
     
-    # 检查消息内容是否包含图像
-    if not isinstance(last_user_msg.content, list):
-        logger.info("用户消息中没有图像内容")
-        new_state["image_analysis_result"] = ""
-        return new_state
+    # 构建提示
+    prompt = []
     
-    # 提取图像内容
-    image_parts = [
-        part for part in last_user_msg.content 
-        if isinstance(part, dict) and part.get("type") == "image_url"
-    ]
+    # 添加系统消息
+    thinker_prompt = load_thinker_prompt()
+    prompt.append(SystemMessage(content=thinker_prompt))
     
-    if not image_parts:
-        logger.info("用户消息中没有图像URL")
-        new_state["image_analysis_result"] = ""
-        return new_state
+    # 添加历史消息
+    prompt.extend(state.messages)
     
-    # 获取第一个图像URL
-    image_url = image_parts[0].get("image_url", {}).get("url", "")
-    
-    if not image_url:
-        logger.warning("图像URL为空")
-        new_state["image_analysis_result"] = ""
-        return new_state
-    
-    # 分析图像
+    # 调用模型进行思考
     try:
-        analysis_result = image_analyzer.analyze(image_url)
-        if analysis_result:
-            logger.info(f"图像分析完成: {analysis_result[:100]}...")
-            new_state["image_analysis_result"] = analysis_result
+        response = multimodal_model(prompt)
+        content = response.content if hasattr(response, "content") else str(response)
+        
+        # 检查是否需要忽略
+        if "IGNORE_SIGNAL" in content:
+            logger.info("思考节点决定忽略当前输入")
+            return {**state.model_dump(), "final_answer": ""}
+        
+        # 检查是否有工具调用
+        if "TOOL_CALL:" in content:
+            logger.info("思考节点决定调用工具")
+            # 解析工具调用
+            tool_parts = content.split("TOOL_CALL:")[1].strip().split("\n")
+            tool_name = None
+            tool_query = None
+            
+            for part in tool_parts:
+                if part.startswith("工具:"):
+                    tool_name = part.replace("工具:", "").strip()
+                elif part.startswith("查询:"):
+                    tool_query = part.replace("查询:", "").strip()
+            
+            if tool_name and tool_query:
+                # 添加工具调用到状态
+                state.messages.append(AIMessage(content=content))
+                return {
+                    **state.model_dump(),
+                    "action_name": tool_name,
+                    "action_input": {"query": tool_query}
+                }
+        
+        # 直接生成最终答案
+        if "FINAL_ANSWER:" in content:
+            answer = content.split("FINAL_ANSWER:")[1].strip()
+            logger.info("思考节点生成了最终答案")
+            
+            # 添加最终答案到状态
+            state.messages.append(AIMessage(content=answer))
+            return {**state.model_dump(), "final_answer": answer}
+        
+        # 未找到明确的行动指令，将全部内容作为回答
+        logger.info("思考节点生成了不带标记的答案")
+        state.messages.append(AIMessage(content=content))
+        return {**state.model_dump(), "final_answer": content}
+    
+    except Exception as e:
+        logger.error(f"思考节点执行出错: {e}", exc_info=True)
+        return {**state.model_dump(), "safety_issues": [f"思考过程发生错误: {str(e)}"]}
+
+def router_node(state: AgentState) -> str:
+    """
+    路由节点
+    
+    根据思考节点的输出决定下一步流程
+    
+    Args:
+        state: 当前状态
+        
+    Returns:
+        下一个节点的名称
+    """
+    logger.info("路由节点执行")
+    
+    # 检查安全问题
+    if state.safety_issues:
+        logger.warning(f"检测到安全问题: {state.safety_issues}")
+        return "error_handler"
+    
+    # 检查是否有最终答案
+    if state.final_answer is not None:
+        logger.info("已生成最终答案，流程结束")
+        return "end"
+    
+    # 检查是否有工具调用
+    if state.action_name and state.action_input:
+        logger.info("检测到工具调用，进入工具节点")
+        return "action_executor"
+    
+    # 默认返回错误处理节点
+    logger.warning("节点输出不明确，进入错误处理")
+    return "error_handler"
+
+def action_executor_node(state: AgentState, tools: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    工具执行节点
+    
+    执行思考节点决定的工具调用
+    
+    Args:
+        state: 当前状态
+        tools: 可用工具字典
+        
+    Returns:
+        更新后的状态，包含工具执行结果
+    """
+    logger.info("工具执行节点执行")
+    
+    if not state.action_name or not state.action_input:
+        logger.warning("没有工具调用需要执行")
+        return {**state.model_dump(), "safety_issues": ["工具调用信息不完整"]}
+    
+    # 获取工具名称和参数
+    tool_name = state.action_name
+    tool_args = state.action_input
+    
+    # 检查工具是否存在
+    if not tools or tool_name not in tools:
+        error_msg = f"未找到工具: {tool_name}"
+        logger.error(error_msg)
+        return {**state.model_dump(), "safety_issues": [error_msg]}
+    
+    # 执行工具调用
+    try:
+        tool = tools[tool_name]
+        if tool_name == "knowledge_search":
+            result = tool.search(**tool_args)
         else:
-            logger.warning("图像分析结果为空")
-            new_state["image_analysis_result"] = "无法获取图像分析结果"
-    except Exception as e:
-        logger.error(f"图像分析出错: {e}", exc_info=True)
-        new_state["image_analysis_result"] = f"图像分析失败: {str(e)}"
-    
-    return new_state
-
-def retrieve_knowledge(
-    state: Dict[str, Any],
-    knowledge_retriever: KnowledgeRetriever
-) -> Dict[str, Any]:
-    """
-    检索知识节点
-    
-    基于图像分析结果和用户问题检索相关知识
-    
-    Args:
-        state: 当前状态
-        knowledge_retriever: 知识检索器
+            logger.warning(f"未知的工具类型: {tool_name}")
+            result = f"不支持的工具: {tool_name}"
         
-    Returns:
-        Dict: 更新后的状态
-    """
-    logger.info("开始检索知识")
-    
-    # 创建状态的副本
-    new_state = copy.deepcopy(state)
-    
-    # 获取图像分析结果
-    image_analysis = new_state.get("image_analysis_result", "")
-    
-    # 从状态中获取消息
-    messages = new_state.get("messages", [])
-    
-    # 提取用户问题
-    user_question = ""
-    user_messages = [m for m in messages if isinstance(m, HumanMessage)]
-    if user_messages:
-        # 获取最后一条用户消息中的文本
-        last_user_msg = user_messages[-1]
-        if isinstance(last_user_msg.content, str):
-            user_question = last_user_msg.content
-        elif isinstance(last_user_msg.content, list):
-            # 提取文本部分
-            text_parts = [
-                part.get("text", "") 
-                for part in last_user_msg.content 
-                if isinstance(part, dict) and part.get("type") == "text"
-            ]
-            user_question = " ".join(text_parts)
-    
-    # 如果没有有效的分析结果或问题，跳过知识检索
-    if not image_analysis and not user_question:
-        logger.info("没有足够信息进行知识检索")
-        new_state["knowledge"] = ""
-        return new_state
-    
-    # 组合查询内容
-    query = f"{image_analysis} {user_question}".strip()
-    
-    # 检索知识
-    try:
-        knowledge = knowledge_retriever.retrieve(query)
-        if knowledge:
-            logger.info(f"知识检索完成: {knowledge[:100]}...")
-            new_state["knowledge"] = knowledge
-        else:
-            logger.info("知识检索未返回结果")
-            new_state["knowledge"] = ""
-    except Exception as e:
-        logger.error(f"知识检索出错: {e}", exc_info=True)
-        new_state["knowledge"] = ""
-    
-    return new_state
-
-def generate_response(
-    state: Dict[str, Any],
-    model: Any
-) -> Dict[str, Any]:
-    """
-    生成回复节点
-    
-    基于图像分析结果、检索的知识和用户问题生成回复
-    
-    Args:
-        state: 当前状态
-        model: 语言模型
+        # 添加工具消息
+        tool_message = ToolMessage(
+            content=result,
+            name=tool_name
+        )
+        state.messages.append(tool_message)
         
-    Returns:
-        Dict: 更新后的状态
-    """
-    logger.info("开始生成回复")
-    
-    # 创建状态的副本
-    new_state = copy.deepcopy(state)
-    
-    # 获取状态数据
-    messages = new_state.get("messages", [])
-    image_analysis = new_state.get("image_analysis_result", "")
-    knowledge = new_state.get("knowledge", "")
-    
-    # 如果没有消息，返回错误提示
-    if not messages:
-        logger.error("消息列表为空")
-        new_state["response"] = "抱歉，我无法处理空的消息列表。"
-        return new_state
-    
-    # 创建系统消息
-    system_prompt = messages[0].content if messages and isinstance(messages[0], SystemMessage) else ""
-    
-    # 如果有图像分析结果和知识，添加到系统提示
-    additional_context = ""
-    if image_analysis:
-        additional_context += f"\n\n图像分析结果: {image_analysis}"
-    if knowledge:
-        additional_context += f"\n\n相关知识: {knowledge}"
-    
-    # 如果有额外上下文，创建一个新的系统消息
-    if additional_context and messages:
-        enhanced_system_prompt = system_prompt + additional_context
-        messages = [SystemMessage(content=enhanced_system_prompt)] + messages[1:]
-    
-    # 生成回复
-    try:
-        response = model.invoke(messages)
-        if response and hasattr(response, 'content'):
-            response_text = response.content
-            logger.info(f"生成回复完成: {response_text[:100]}...")
-            
-            # 添加AI回复到消息历史
-            messages.append(AIMessage(content=response_text))
-            
-            # 更新状态
-            new_state["messages"] = messages
-            new_state["response"] = response_text
-        else:
-            logger.warning("模型返回了无效的响应")
-            new_state["response"] = "抱歉，我生成回复时遇到了问题。请稍后再试。"
-    except Exception as e:
-        logger.error(f"生成回复出错: {e}", exc_info=True)
-        new_state["response"] = "抱歉，我在处理您的请求时遇到了问题。请稍后再试。"
-    
-    return new_state 
-
-def image_analyzer_node(state: AgentState) -> Dict[str, Any]:
-    """
-    图像分析节点包装函数
-    
-    Args:
-        state: 当前状态
+        # 记录工具执行结果
+        state.action_output = result
         
-    Returns:
-        Dict: 更新后的状态
-    """
-    logger.info("执行图像分析节点")
-    try:
-        # 从状态上下文中获取图像分析器
-        image_analyzer = state.get("_tools", {}).get("image_analyzer")
-        if not image_analyzer:
-            raise ValueError("图像分析器未在状态中找到")
-            
-        state_update = analyze_image(state, image_analyzer)
-        return state_update
-    except Exception as e:
-        logger.error(f"图像分析节点执行出错: {e}", exc_info=True)
-        return {
-            **state,
-            "error": f"图像分析失败: {str(e)}"
+        # 清除当前的工具调用信息，为下一次调用做准备
+        action_result = {
+            **state.model_dump(),
+            "action_output": result,
         }
-
-def knowledge_retriever_node(state: AgentState) -> Dict[str, Any]:
-    """
-    知识检索节点包装函数
-    
-    Args:
-        state: 当前状态
         
-    Returns:
-        Dict: 更新后的状态
-    """
-    logger.info("执行知识检索节点")
-    try:
-        # 从状态上下文中获取知识检索器
-        knowledge_retriever = state.get("_tools", {}).get("knowledge_retriever")
-        if not knowledge_retriever:
-            raise ValueError("知识检索器未在状态中找到")
-            
-        state_update = retrieve_knowledge(state, knowledge_retriever)
-        return state_update
-    except Exception as e:
-        logger.error(f"知识检索节点执行出错: {e}", exc_info=True)
-        return {
-            **state,
-            "error": f"知识检索失败: {str(e)}"
-        }
-
-def response_generator_node(state: AgentState) -> Dict[str, Any]:
-    """
-    回复生成节点包装函数
+        logger.info(f"工具 {tool_name} 执行完成")
+        return action_result
     
-    Args:
-        state: 当前状态
-        
-    Returns:
-        Dict: 更新后的状态
-    """
-    logger.info("执行回复生成节点")
-    try:
-        # 从状态上下文中获取模型
-        model = state.get("_tools", {}).get("model")
-        if not model:
-            raise ValueError("语言模型未在状态中找到")
-            
-        state_update = generate_response(state, model)
-        return state_update
     except Exception as e:
-        logger.error(f"回复生成节点执行出错: {e}", exc_info=True)
-        return {
-            **state,
-            "error": f"生成回复失败: {str(e)}"
-        }
+        error_msg = f"工具 {tool_name} 执行出错: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return {**state.model_dump(), "safety_issues": [error_msg]}
 
 def error_handler_node(state: AgentState) -> Dict[str, Any]:
     """
     错误处理节点
     
-    处理流程中的错误，生成友好的错误消息
+    处理流程中的异常
     
     Args:
         state: 当前状态
         
     Returns:
-        Dict: 更新后的状态
+        更新后的状态，包含错误处理结果
     """
-    logger.info("执行错误处理节点")
+    logger.info("错误处理节点执行")
     
-    # 创建状态的副本
-    new_state = copy.deepcopy(state)
+    # 获取安全问题列表
+    safety_issues = state.safety_issues
     
-    # 获取错误信息
-    error_msg = new_state.get("error", "未知错误")
-    logger.error(f"处理错误: {error_msg}")
+    # 生成错误消息
+    error_message = "抱歉，处理您的请求时遇到了问题: "
     
-    # 获取消息历史
-    messages = new_state.get("messages", [])
+    if safety_issues:
+        error_message += f"{'; '.join(safety_issues)}"
+    else:
+        error_message += "未知错误"
     
-    # 创建错误响应
-    friendly_error_msg = f"抱歉，我在处理您的请求时遇到了问题: {error_msg}。请重新尝试或换一种方式提问。"
+    logger.warning(f"错误处理: {error_message}")
     
-    # 添加错误消息到历史
-    messages.append(AIMessage(content=friendly_error_msg))
-    new_state["messages"] = messages
-    
-    # 清除错误状态，防止无限循环
-    new_state.pop("error", None)
-    
-    return new_state
-
-def agent_node(state: AgentState) -> Dict[str, Any]:
-    """
-    ReAct模式的Agent节点
-    
-    作为决策中心，处理用户输入，决定接下来的行动
-    - 分析图像
-    - 检索知识
-    - 生成回复
-    
-    Args:
-        state: 当前状态
-        
-    Returns:
-        Dict: 带有下一步行动的状态更新
-    """
-    logger.info("执行Agent决策节点")
-    
-    # 创建状态的副本
-    new_state = copy.deepcopy(state)
-    
-    # 获取状态数据
-    messages = new_state.get("messages", [])
-    tools = new_state.get("_tools", {})
-    model = tools.get("model")
-    
-    if not model:
-        logger.error("语言模型未在状态中找到")
-        new_state["error"] = "缺少必要的语言模型"
-        return new_state
-    
-    # 创建工具定义列表
-    tool_definitions = [
-        {
-            "type": "function",
-            "function": {
-                "name": "analyze_image",
-                "description": "分析用户提供的图像，识别其中的内容，特别是地标、景点等",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            }
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "retrieve_knowledge",
-                "description": "根据图像分析结果和用户问题，检索相关的知识和信息",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "搜索查询，可以是图像分析结果或用户问题"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        }
-    ]
-    
-    # 如果已有图像分析结果，添加到系统消息中
-    if new_state.get("image_analysis_result"):
-        # 查找系统消息或创建新的
-        has_system_msg = False
-        for i, msg in enumerate(messages):
-            if isinstance(msg, SystemMessage):
-                has_system_msg = True
-                # 更新系统消息，添加图像分析信息
-                original_content = msg.content
-                if "图像分析结果:" not in original_content:
-                    messages[i] = SystemMessage(content=f"{original_content}\n\n图像分析结果: {new_state['image_analysis_result']}")
-                break
-        
-        # 如果没有系统消息，创建一个
-        if not has_system_msg and messages:
-            messages.insert(0, SystemMessage(content=f"图像分析结果: {new_state['image_analysis_result']}"))
-    
-    # 如果已有知识检索结果，添加到系统消息中
-    if new_state.get("knowledge"):
-        # 查找系统消息或创建新的
-        has_system_msg = False
-        for i, msg in enumerate(messages):
-            if isinstance(msg, SystemMessage):
-                has_system_msg = True
-                # 更新系统消息，添加知识信息
-                original_content = msg.content
-                if "相关知识:" not in original_content:
-                    messages[i] = SystemMessage(content=f"{original_content}\n\n相关知识: {new_state['knowledge']}")
-                break
-        
-        # 如果没有系统消息，创建一个
-        if not has_system_msg and messages:
-            messages.insert(0, SystemMessage(content=f"相关知识: {new_state['knowledge']}"))
-    
-    try:
-        # 配置模型使用工具
-        model_with_tools = model.bind_tools(tool_definitions)
-        
-        # 调用模型进行决策
-        response = model_with_tools.invoke(messages)
-        
-        # 将模型响应添加到消息历史
-        messages.append(response)
-        new_state["messages"] = messages
-        
-        return new_state
-    except Exception as e:
-        logger.error(f"Agent决策出错: {e}", exc_info=True)
-        new_state["error"] = f"决策过程出错: {str(e)}"
-        return new_state
-
-def tools_node(state: AgentState) -> Dict[str, Any]:
-    """
-    工具执行节点
-    
-    执行Agent决定调用的工具
-    
-    Args:
-        state: 当前状态
-        
-    Returns:
-        Dict: 工具执行结果的状态更新
-    """
-    logger.info("执行工具节点")
-    
-    # 创建状态的副本
-    new_state = copy.deepcopy(state)
-    
-    # 获取消息
-    messages = new_state.get("messages", [])
-    if not messages:
-        logger.error("消息列表为空")
-        new_state["error"] = "消息列表为空"
-        return new_state
-    
-    # 获取最后一条AI消息
-    ai_messages = [m for m in messages if isinstance(m, AIMessage)]
-    if not ai_messages:
-        logger.error("没有找到AI消息")
-        new_state["error"] = "没有找到AI消息"
-        return new_state
-    
-    last_ai_msg = ai_messages[-1]
-    
-    # 检查是否有工具调用
-    if not hasattr(last_ai_msg, 'tool_calls') or not last_ai_msg.tool_calls:
-        logger.info("AI消息中没有工具调用")
-        return new_state
-    
-    # 获取工具
-    tools = new_state.get("_tools", {})
-    image_analyzer = tools.get("image_analyzer")
-    knowledge_retriever = tools.get("knowledge_retriever")
-    
-    # 处理每个工具调用
-    for tool_call in last_ai_msg.tool_calls:
-        tool_name = tool_call.get("name", "")
-        
-        if tool_name == "analyze_image" and image_analyzer:
-            try:
-                result = analyze_image(new_state, image_analyzer)
-                new_state["image_analysis_result"] = result.get("image_analysis_result", "")
-            except Exception as e:
-                logger.error(f"图像分析工具执行出错: {e}", exc_info=True)
-                new_state["error"] = f"图像分析工具执行出错: {str(e)}"
-        
-        elif tool_name == "retrieve_knowledge" and knowledge_retriever:
-            args = tool_call.get("args", {})
-            query = args.get("query", "")
-            
-            # 如果没有提供查询，使用图像分析结果
-            if not query and new_state.get("image_analysis_result"):
-                query = new_state["image_analysis_result"]
-            
-            if query:
-                try:
-                    result = retrieve_knowledge({"messages": messages, "image_analysis_result": new_state.get("image_analysis_result", "")}, knowledge_retriever)
-                    new_state["knowledge"] = result.get("knowledge", "")
-                except Exception as e:
-                    logger.error(f"知识检索工具执行出错: {e}", exc_info=True)
-                    new_state["error"] = f"知识检索工具执行出错: {str(e)}"
-    
-    # 添加工具结果消息
-    if new_state.get("image_analysis_result") or new_state.get("knowledge"):
-        tool_result = ""
-        if new_state.get("image_analysis_result"):
-            tool_result += f"图像分析结果: {new_state['image_analysis_result']}\n\n"
-        if new_state.get("knowledge"):
-            tool_result += f"知识检索结果: {new_state['knowledge']}"
-        
-        # 添加工具消息到历史
-        # 注意：这里不是LangChain的标准ToolMessage，我们用AIMessage来模拟工具结果
-        # 更完善的实现应该使用专门的工具消息类型
-        messages.append(AIMessage(content=tool_result))
-        new_state["messages"] = messages
-    
-    return new_state 
+    # 添加错误消息到状态
+    return {**state.model_dump(), "final_answer": error_message} 
