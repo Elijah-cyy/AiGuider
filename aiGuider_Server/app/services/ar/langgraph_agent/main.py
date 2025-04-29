@@ -19,7 +19,7 @@ from .graph.graph import create_agent
 from .llms.qwen import get_qwen_model
 from .tools.knowledge_searcher import KnowledgeSearcher
 from .prompts.templates import load_system_prompt
-from .graph.state import MultiModalInput
+from .graph.state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -105,14 +105,14 @@ class ARGuideAgent:
             raise RuntimeError(error_message) from e
     
     async def process_query(self, 
-                     text_query: str, 
+                     text_query: Optional[str] = "", 
                      image_data: Optional[Union[str, bytes]] = None,
                      session_id: Optional[str] = None) -> Dict:
         """
         处理多模态查询
         
         Args:
-            text_query: 用户文本查询
+            text_query: 用户文本查询，可以为空字符串或None
             image_data: 可选的图像数据，可以是base64字符串或字节
             session_id: 会话ID，用于上下文保持
             
@@ -121,6 +121,7 @@ class ARGuideAgent:
         """
         # 准备系统消息
         system_message = SystemMessage(content=load_system_prompt())
+        logger.info(f"系统消息: {system_message.content}")
         
         # 处理图像数据
         image_url = None
@@ -150,16 +151,18 @@ class ARGuideAgent:
         user_message = HumanMessage(content=content)
         
         # 准备状态
-        state = {
-            "messages": [system_message, user_message],
-            "input": MultiModalInput(
-                image_url=image_url,
-                text=text_query,
-                context="",
-                timestamp=datetime.now()
-            ),
-            "should_respond": True
-        }
+        state = AgentState(
+            messages=[system_message, user_message],
+            current_input=user_message
+        )
+        
+        logger.info("调用Graph前的状态信息:")
+        # 如果state是字典，使用字典访问
+        logger.info(f"消息列表: {state.get('messages', [])}")
+        logger.info(f"当前输入: {state.get('current_input')}")
+        logger.info(f"工具状态: {state.get('tool')}")
+        logger.info(f"安全问题: {state.get('safety_issues', [])}")
+        logger.info(f"最终回答: {state.get('final_answer')}")
         
         # 配置运行时参数
         config = {}
@@ -169,9 +172,11 @@ class ARGuideAgent:
         # 异步执行图
         try:
             final_result = {"response": "", "status": "success"}
+            last_event = None
             
             # 使用astream获取流式结果
             async for event in self.graph.astream(state, config):
+                last_event = event  # 保存最后一个事件
                 if "response" in event:
                     final_result["response"] = event["response"]
                 elif "error" in event:
@@ -180,9 +185,9 @@ class ARGuideAgent:
                 elif "safety_issues" in event and event["safety_issues"]:
                     final_result["status"] = "safety_filtered"
                     final_result["safety_issues"] = event["safety_issues"]
-                    
-            # 如果Agent决定不响应，返回空响应
-            if "should_respond" in event and not event["should_respond"]:
+            
+            # 如果有事件并且Agent决定不响应，返回空响应
+            if last_event and "should_respond" in last_event and not last_event["should_respond"]:
                 final_result["status"] = "no_response_needed"
                 
             return final_result
@@ -232,7 +237,7 @@ def get_agent_instance(model_name: str = "qwen2.5-vl") -> ARGuideAgent:
     return _agent_instance
 
 async def process_multimodal_query(
-    text_query: str,
+    text_query: Optional[str] = "",
     image_data: Optional[Union[str, bytes]] = None,
     session_id: Optional[str] = None
 ) -> Dict:
@@ -240,7 +245,7 @@ async def process_multimodal_query(
     处理多模态查询的便捷函数，也是调用AR agent的函数入口
     
     Args:
-        text_query: 用户文本查询
+        text_query: 用户文本查询，可以为空字符串或None
         image_data: 可选的图像数据，可以是base64字符串或字节
         session_id: 会话ID，用于上下文保持
         

@@ -10,12 +10,12 @@ from datetime import datetime
 
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
 
-from .state import AgentState
+from .state import AgentState, ToolState
 from ..prompts.templates import load_thinker_prompt
 
 logger = logging.getLogger(__name__)
 
-def thinker_node(state: AgentState, multimodal_model: Any) -> Dict[str, Any]:
+def thinker_node(state: Dict[str, Any], multimodal_model: Any) -> Dict[str, Any]:
     """
     核心思考节点
     
@@ -30,21 +30,45 @@ def thinker_node(state: AgentState, multimodal_model: Any) -> Dict[str, Any]:
     """
     logger.info("思考节点执行")
     
-    # 初始化处理时间（原start_node功能）
-    state.last_interaction_time = datetime.now()
+    # 由于使用add_messages Reducer，不再需要初始化处理时间
     
-    if not state.messages:
+    # 检查state是字典还是AgentState对象
+    if isinstance(state, dict):
+        messages = state.get("messages", [])
+        state_dump = state
+    else:
+        messages = state.messages if hasattr(state, "messages") else []
+        state_dump = state.model_dump()
+    
+    if not messages:
         logger.warning("消息为空，无法执行思考节点")
-        return {**state.model_dump(), "final_answer": "无法处理空消息"}
+        return {**state_dump, "final_answer": "无法处理空消息"}
     
     # 获取最新的用户消息和多模态输入
-    last_message = state.messages[-1]
-    input_data = state.current_input
+    last_message = messages[-1]
+    
+    # 检查state是字典还是AgentState对象
+    if isinstance(state, dict):
+        input_data = state.get("current_input")
+    else:
+        input_data = state.current_input
+    
+    # 检查多模态内容
+    has_image = False
+    if input_data and isinstance(input_data.content, list):
+        for item in input_data.content:
+            if isinstance(item, dict) and (item.get("type") == "image_url" or item.get("type") == "image"):
+                has_image = True
+                break
+    
+    # 记录输入类型
+    if has_image:
+        logger.info("收到包含图像的多模态输入")
     
     # 直接使用传入的多模态模型，不从状态中获取
     if not multimodal_model:
         logger.error("未找到多模态模型")
-        return {**state.model_dump(), "safety_issues": ["未找到多模态模型"]}
+        return {**state_dump, "safety_issues": ["未找到多模态模型"]}
     
     # 构建提示
     prompt = []
@@ -54,17 +78,17 @@ def thinker_node(state: AgentState, multimodal_model: Any) -> Dict[str, Any]:
     prompt.append(SystemMessage(content=thinker_prompt))
     
     # 添加历史消息
-    prompt.extend(state.messages)
+    prompt.extend(messages)
     
     # 调用模型进行思考
     try:
-        response = multimodal_model(prompt)
+        response = multimodal_model.invoke(prompt)
         content = response.content if hasattr(response, "content") else str(response)
         
         # 检查是否需要忽略
         if "IGNORE_SIGNAL" in content:
             logger.info("思考节点决定忽略当前输入")
-            return {**state.model_dump(), "final_answer": ""}
+            return {**state_dump, "final_answer": ""}
         
         # 检查是否有工具调用
         if "TOOL_CALL:" in content:
@@ -81,12 +105,18 @@ def thinker_node(state: AgentState, multimodal_model: Any) -> Dict[str, Any]:
                     tool_query = part.replace("查询:", "").strip()
             
             if tool_name and tool_query:
-                # 添加工具调用到状态
-                state.messages.append(AIMessage(content=content))
+                # 创建工具状态
+                tool_state = ToolState(
+                    name=tool_name,
+                    input={"query": tool_query},
+                    status="pending"
+                )
+                
+                # 使用add_messages Reducer，直接返回新消息
                 return {
-                    **state.model_dump(),
-                    "action_name": tool_name,
-                    "action_input": {"query": tool_query}
+                    **state_dump,
+                    "messages": [AIMessage(content=content)],
+                    "tool": tool_state
                 }
         
         # 直接生成最终答案
@@ -94,20 +124,26 @@ def thinker_node(state: AgentState, multimodal_model: Any) -> Dict[str, Any]:
             answer = content.split("FINAL_ANSWER:")[1].strip()
             logger.info("思考节点生成了最终答案")
             
-            # 添加最终答案到状态
-            state.messages.append(AIMessage(content=answer))
-            return {**state.model_dump(), "final_answer": answer}
+            # 使用add_messages Reducer，直接返回新消息
+            return {
+                **state_dump,
+                "messages": [AIMessage(content=answer)],
+                "final_answer": answer
+            }
         
         # 未找到明确的行动指令，将全部内容作为回答
         logger.info("思考节点生成了不带标记的答案")
-        state.messages.append(AIMessage(content=content))
-        return {**state.model_dump(), "final_answer": content}
+        return {
+            **state_dump,
+            "messages": [AIMessage(content=content)],
+            "final_answer": content
+        }
     
     except Exception as e:
         logger.error(f"思考节点执行出错: {e}", exc_info=True)
-        return {**state.model_dump(), "safety_issues": [f"思考过程发生错误: {str(e)}"]}
+        return {**state_dump, "safety_issues": [f"思考过程发生错误: {str(e)}"]}
 
-def router_node(state: AgentState) -> str:
+def router_node(state: Dict[str, Any]) -> str:
     """
     路由节点
     
@@ -121,26 +157,37 @@ def router_node(state: AgentState) -> str:
     """
     logger.info("路由节点执行")
     
+    # 检查state是字典还是AgentState对象
+    if isinstance(state, dict):
+        safety_issues = state.get("safety_issues", [])
+        final_answer = state.get("final_answer")
+        tool = state.get("tool")
+    else:
+        safety_issues = state.safety_issues
+        final_answer = state.final_answer
+        tool = state.tool
+    
     # 检查安全问题
-    if state.safety_issues:
-        logger.warning(f"检测到安全问题: {state.safety_issues}")
+    if safety_issues:
+        logger.warning(f"检测到安全问题: {safety_issues}")
         return "error_handler"
     
     # 检查是否有最终答案
-    if state.final_answer is not None:
+    if final_answer is not None:
+        logger.info(f"已生成最终答案：{final_answer}")
         logger.info("已生成最终答案，流程结束")
         return "end"
     
     # 检查是否有工具调用
-    if state.action_name and state.action_input:
-        logger.info("检测到工具调用，进入工具节点")
+    if tool and tool.name and tool.input:
+        logger.info(f"检测到工具调用: {tool.name}，进入工具节点")
         return "action_executor"
     
     # 默认返回错误处理节点
     logger.warning("节点输出不明确，进入错误处理")
     return "error_handler"
 
-def action_executor_node(state: AgentState, tools: Dict[str, Any]) -> Dict[str, Any]:
+def action_executor_node(state: Dict[str, Any], tools: Dict[str, Any]) -> Dict[str, Any]:
     """
     工具执行节点
     
@@ -155,19 +202,27 @@ def action_executor_node(state: AgentState, tools: Dict[str, Any]) -> Dict[str, 
     """
     logger.info("工具执行节点执行")
     
-    if not state.action_name or not state.action_input:
+    # 检查state是字典还是AgentState对象
+    if isinstance(state, dict):
+        tool = state.get("tool")
+        state_dump = state
+    else:
+        tool = state.tool
+        state_dump = state.model_dump()
+    
+    if not tool or not tool.name or not tool.input:
         logger.warning("没有工具调用需要执行")
-        return {**state.model_dump(), "safety_issues": ["工具调用信息不完整"]}
+        return {**state_dump, "safety_issues": ["工具调用信息不完整"]}
     
     # 获取工具名称和参数
-    tool_name = state.action_name
-    tool_args = state.action_input
+    tool_name = tool.name
+    tool_args = tool.input
     
     # 检查工具是否存在
     if not tools or tool_name not in tools:
         error_msg = f"未找到工具: {tool_name}"
         logger.error(error_msg)
-        return {**state.model_dump(), "safety_issues": [error_msg]}
+        return {**state_dump, "safety_issues": [error_msg]}
     
     # 执行工具调用
     try:
@@ -178,20 +233,26 @@ def action_executor_node(state: AgentState, tools: Dict[str, Any]) -> Dict[str, 
             logger.warning(f"未知的工具类型: {tool_name}")
             result = f"不支持的工具: {tool_name}"
         
-        # 添加工具消息
+        # 创建工具消息
         tool_message = ToolMessage(
             content=result,
             name=tool_name
         )
-        state.messages.append(tool_message)
+        
+        # 更新工具状态
+        updated_tool = ToolState(
+            name=tool_name,
+            input=tool_args,
+            output=result,
+            status="success"
+        )
         
         # 记录工具执行结果
-        state.action_output = result
-        
-        # 清除当前的工具调用信息，为下一次调用做准备
+        # 使用add_messages Reducer，直接返回新消息
         action_result = {
-            **state.model_dump(),
-            "action_output": result,
+            **state_dump,
+            "messages": [tool_message],
+            "tool": updated_tool
         }
         
         logger.info(f"工具 {tool_name} 执行完成")
@@ -200,34 +261,55 @@ def action_executor_node(state: AgentState, tools: Dict[str, Any]) -> Dict[str, 
     except Exception as e:
         error_msg = f"工具 {tool_name} 执行出错: {str(e)}"
         logger.error(error_msg, exc_info=True)
-        return {**state.model_dump(), "safety_issues": [error_msg]}
+        
+        # 更新工具状态为错误
+        updated_tool = ToolState(
+            name=tool_name,
+            input=tool_args,
+            output=str(e),
+            status="error"
+        )
+        
+        return {
+            **state_dump, 
+            "safety_issues": [error_msg],
+            "tool": updated_tool
+        }
 
-def error_handler_node(state: AgentState) -> Dict[str, Any]:
+def error_handler_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     错误处理节点
     
-    处理流程中的异常
+    处理流程中发生的错误，生成用户友好的错误消息
     
     Args:
         state: 当前状态
         
     Returns:
-        更新后的状态，包含错误处理结果
+        包含错误处理结果的状态
     """
     logger.info("错误处理节点执行")
     
-    # 获取安全问题列表
-    safety_issues = state.safety_issues
-    
-    # 生成错误消息
-    error_message = "抱歉，处理您的请求时遇到了问题: "
-    
-    if safety_issues:
-        error_message += f"{'; '.join(safety_issues)}"
+    # 检查state是字典还是AgentState对象
+    if isinstance(state, dict):
+        safety_issues = state.get("safety_issues", [])
+        state_dump = state
     else:
-        error_message += "未知错误"
+        safety_issues = state.safety_issues
+        state_dump = state.model_dump()
     
-    logger.warning(f"错误处理: {error_message}")
+    # 汇总错误原因
+    error_reasons = " ".join(safety_issues) if safety_issues else "未知错误"
     
-    # 添加错误消息到状态
-    return {**state.model_dump(), "final_answer": error_message} 
+    # 构建用户友好的错误消息
+    error_message = f"很抱歉，我在处理您的请求时遇到了问题。{error_reasons}"
+    
+    # 创建回复消息
+    error_response = AIMessage(content=error_message)
+    
+    # 返回包含错误消息的状态
+    return {
+        **state_dump,
+        "messages": [error_response],
+        "final_answer": error_message
+    } 
