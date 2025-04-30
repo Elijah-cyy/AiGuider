@@ -5,17 +5,6 @@
 """
 
 from .thinker import THINKER_PROMPT
-from .system import SYSTEM_PROMPT
-
-def load_system_prompt() -> str:
-    """
-    加载系统提示
-    
-    Returns:
-        str: 系统提示内容
-    """
-    # 使用系统整体提示词
-    return SYSTEM_PROMPT
 
 def load_thinker_prompt() -> str:
     """

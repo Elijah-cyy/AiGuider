@@ -11,14 +11,13 @@ from typing import Dict, Optional, Union
 import base64
 from datetime import datetime
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 from .config.model_config import load_model_config, ConfigError
 from .graph.graph import create_agent
 from .llms.qwen import get_qwen_model
 from .tools.knowledge_searcher import KnowledgeSearcher
-from .prompts.templates import load_system_prompt
 from .graph.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -76,130 +75,122 @@ class ARGuideAgent:
     
     def _initialize_model(self, model_name: str):
         """
-        根据模型名称初始化对应的模型
+        初始化要使用的多模态模型
         
         Args:
-            model_name: 模型名称
+            model_name: 模型标识符
             
         Returns:
-            初始化好的模型实例
-            
-        Raises:
-            RuntimeError: 当模型初始化失败时抛出
+            初始化的模型实例
         """
-        try:
-            # 根据模型名称前缀选择对应的初始化函数
-            if model_name.startswith("qwen"):
-                return get_qwen_model(self.config)
-            # 这里可以添加更多模型类型的支持
-            # elif model_name.startswith("gpt"):
-            #     return get_gpt_model(self.config)
-            # elif model_name.startswith("gemini"):
-            #     return get_gemini_model(self.config)
-            else:
-                logger.warning(f"未知的模型类型: {model_name}，使用默认的Qwen模型")
-                return get_qwen_model(self.config)
-        except Exception as e:
-            error_message = f"初始化模型 {model_name} 失败: {str(e)}"
-            logger.error(error_message, exc_info=True)
-            raise RuntimeError(error_message) from e
+        logger.info(f"初始化多模态模型: {model_name}")
+        
+        # 当前只支持通义千问模型
+        if "qwen" in model_name.lower():
+            return get_qwen_model(self.config)
+        else:
+            raise ValueError(f"不支持的模型类型: {model_name}")
     
     async def process_query(self, 
                      text_query: Optional[str] = "", 
                      image_data: Optional[Union[str, bytes]] = None,
                      session_id: Optional[str] = None) -> Dict:
         """
-        处理多模态查询
+        处理多模态查询，执行Agent响应生成
         
         Args:
-            text_query: 用户文本查询，可以为空字符串或None
-            image_data: 可选的图像数据，可以是base64字符串或字节
-            session_id: 会话ID，用于上下文保持
+            text_query: 用户文本查询内容
+            image_data: 可选的图像数据，可以是base64字符串或原始字节
+            session_id: 会话ID，用于状态追踪
             
         Returns:
-            包含回复文本的字典
+            Dict: 包含Agent响应的字典
         """
-        # 准备系统消息
-        system_message = SystemMessage(content=load_system_prompt())
-        logger.info(f"系统消息: {system_message.content}")
-        
-        # 处理图像数据
-        image_url = None
-        if image_data:
-            # 如果是字节数据，转换为base64
-            if isinstance(image_data, bytes):
-                image_data = base64.b64encode(image_data).decode('utf-8')
-            
-            # 确保image_data是base64字符串
-            if not image_data.startswith('data:image'):
-                image_data = f"data:image/jpeg;base64,{image_data}"
-            
-            image_url = image_data
-        
-        # 创建用户消息内容
-        content = []
-        
-        # 添加文本内容
-        if text_query:
-            content.append({"type": "text", "text": text_query})
-        
-        # 如果有图像，添加图像内容
-        if image_url:
-            content.append({"type": "image_url", "image_url": {"url": image_url}})
-        
-        # 添加人类消息
-        user_message = HumanMessage(content=content)
-        
-        # 准备状态
-        state = AgentState(
-            messages=[system_message, user_message],
-            current_input=user_message
-        )
-        
-        logger.info("调用Graph前的状态信息:")
-        # 如果state是字典，使用字典访问
-        logger.info(f"消息列表: {state.get('messages', [])}")
-        logger.info(f"当前输入: {state.get('current_input')}")
-        logger.info(f"工具状态: {state.get('tool')}")
-        logger.info(f"安全问题: {state.get('safety_issues', [])}")
-        logger.info(f"最终回答: {state.get('final_answer')}")
-        
-        # 配置运行时参数
-        config = {}
-        if session_id and self.checkpointer:
-            config["configurable"] = {"thread_id": session_id}
-        
-        # 异步执行图
         try:
-            final_result = {"response": "", "status": "success"}
-            last_event = None
+            # 准备多模态输入
             
-            # 使用astream获取流式结果
-            async for event in self.graph.astream(state, config):
-                last_event = event  # 保存最后一个事件
-                if "response" in event:
-                    final_result["response"] = event["response"]
-                elif "error" in event:
-                    final_result["status"] = "error"
-                    final_result["error"] = event["error"]
-                elif "safety_issues" in event and event["safety_issues"]:
-                    final_result["status"] = "safety_filtered"
-                    final_result["safety_issues"] = event["safety_issues"]
+            # 构建用户消息（支持多模态）
+            # 判断输入类型：纯图像、图像+文字或纯文字（仅调试）
             
-            # 如果有事件并且Agent决定不响应，返回空响应
-            if last_event and "should_respond" in last_event and not last_event["should_respond"]:
-                final_result["status"] = "no_response_needed"
+            # 如果有图像数据，确保图像转为base64格式
+            if image_data:
+                # 确保图像数据是base64格式
+                if isinstance(image_data, bytes):
+                    image_b64 = base64.b64encode(image_data).decode("utf-8")
+                else:
+                    # 假设已经是base64字符串
+                    image_b64 = image_data
                 
-            return final_result
-        except Exception as e:
-            # 记录详细错误信息
-            error_id = f"err_{hash(e)%10000:04d}"
-            logger.error(f"处理查询时出错 [ID: {error_id}]: {e}", exc_info=True)
+                # 构建多模态内容
+                if text_query:
+                    # 图像+文字情况
+                    logger.info(f"图像+文字输入: {text_query}")
+                    multimodal_content = [
+                        {"text": text_query},
+                        {"image": f"data:image/jpeg;base64,{image_b64}"}
+                    ]
+                else:
+                    # 纯图像情况，提供一个默认的提示以便模型分析图像
+                    logger.info("纯图像输入")
+                    multimodal_content = [
+                        {"text": "AR眼镜中得到了这个画面"},
+                        {"image": f"data:image/jpeg;base64,{image_b64}"}
+                    ]
+                
+                user_message = HumanMessage(content=multimodal_content)
+            else:
+                # 纯文本输入 (仅用于调试)
+                if not text_query:
+                    # 既没有图像也没有文本，这是一个错误的输入
+                    raise ValueError("必须提供图像或文本输入")
+                
+                logger.info("纯文本输入 (仅用于调试)")
+                user_message = HumanMessage(content=text_query)
             
+            # 准备状态，使用字典初始化，而非构造函数
+            state = {
+                "messages": [user_message],
+                "current_input": user_message,
+                "tool": None,
+                "safety_issues": [],
+                "final_answer": None
+            }
+            
+            # 配置运行时参数，thread_id是会话ID
+            config = {}
+            if session_id and self.checkpointer:
+                config["configurable"] = {"thread_id": session_id}
+            
+            # 调用Agent图执行推理
+            logger.info("调用LangGraph执行推理")
+            result = await asyncio.to_thread(self.graph.invoke, state, config)
+            
+            # 解析结果，获取最终回答
+            final_answer = result.get("final_answer", "")
+            
+            # 处理可能的复杂响应格式（多模态模型返回的列表格式）
+            if isinstance(final_answer, list):
+                extracted_texts = []
+                for item in final_answer:
+                    if isinstance(item, dict) and 'text' in item:
+                        extracted_texts.append(item['text'])
+                final_answer = "\n".join(extracted_texts)
+                logger.info(f"从最终答案中提取纯文本内容: {final_answer}")
+            
+            # 返回响应
             return {
-                "response": "很抱歉，我处理您的请求时遇到了问题。请稍后再试。", 
-                "status": "error",
-                "error_id": error_id
+                "response": final_answer,
+                "success": True,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            error_message = f"处理查询时发生错误: {str(e)}"
+            logger.error(error_message, exc_info=True)
+            return {
+                "response": f"很抱歉，处理您的请求时发生了错误: {str(e)}",
+                "success": False,
+                "timestamp": datetime.now().isoformat()
             }
 
 

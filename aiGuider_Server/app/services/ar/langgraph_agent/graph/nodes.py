@@ -15,7 +15,7 @@ from ..prompts.templates import load_thinker_prompt
 
 logger = logging.getLogger(__name__)
 
-def thinker_node(state: Dict[str, Any], multimodal_model: Any) -> Dict[str, Any]:
+def thinker_node(state: AgentState, multimodal_model: Any) -> Dict[str, Any]:
     """
     核心思考节点
     
@@ -30,60 +30,61 @@ def thinker_node(state: Dict[str, Any], multimodal_model: Any) -> Dict[str, Any]
     """
     logger.info("思考节点执行")
     
-    # 由于使用add_messages Reducer，不再需要初始化处理时间
-    
-    # 检查state是字典还是AgentState对象
-    if isinstance(state, dict):
-        messages = state.get("messages", [])
-        state_dump = state
-    else:
-        messages = state.messages if hasattr(state, "messages") else []
-        state_dump = state.model_dump()
+    # 从状态中获取消息
+    messages = state.get("messages", [])
+    # 使用字典复制而不是model_dump()
+    state_dump = dict(state)
     
     if not messages:
-        logger.warning("消息为空，无法执行思考节点")
+        logger.warning("不应被触发：AgentState中的消息为空，无法执行思考节点")
         return {**state_dump, "final_answer": "无法处理空消息"}
     
-    # 获取最新的用户消息和多模态输入
-    last_message = messages[-1]
+    # 获取当前输入
+    input_data = state.get("current_input")
+    # logger.info(f"当前输入: {input_data}")
     
-    # 检查state是字典还是AgentState对象
-    if isinstance(state, dict):
-        input_data = state.get("current_input")
-    else:
-        input_data = state.current_input
-    
-    # 检查多模态内容
-    has_image = False
-    if input_data and isinstance(input_data.content, list):
-        for item in input_data.content:
-            if isinstance(item, dict) and (item.get("type") == "image_url" or item.get("type") == "image"):
-                has_image = True
-                break
-    
-    # 记录输入类型
-    if has_image:
-        logger.info("收到包含图像的多模态输入")
-    
-    # 直接使用传入的多模态模型，不从状态中获取
+    # 直接使用传入的多模态模型
     if not multimodal_model:
         logger.error("未找到多模态模型")
         return {**state_dump, "safety_issues": ["未找到多模态模型"]}
     
-    # 构建提示
+    # 构建提示词
     prompt = []
-    
-    # 添加系统消息
     thinker_prompt = load_thinker_prompt()
     prompt.append(SystemMessage(content=thinker_prompt))
     
     # 添加历史消息
     prompt.extend(messages)
+    # # 打印提示词列表的每个成员
+    # logger.info("提示词列表内容:")
+    # for i, msg in enumerate(prompt):
+    #     logger.info(f"消息 {i}: 类型={type(msg).__name__}, 内容={msg.content}")
     
     # 调用模型进行思考
     try:
         response = multimodal_model.invoke(prompt)
-        content = response.content if hasattr(response, "content") else str(response)
+        logger.info(f"模型响应: {response}")
+        
+        # 处理多模态模型返回的内容格式，确保提取纯文本
+        if hasattr(response, "content"):
+            content_data = response.content
+            # 处理不同格式的响应内容
+            if isinstance(content_data, list):
+                # 多模态模型返回的列表格式，提取文本内容
+                extracted_texts = []
+                for item in content_data:
+                    if isinstance(item, dict) and 'text' in item:
+                        extracted_texts.append(item['text'])
+                content = "\n".join(extracted_texts)
+                logger.info(f"从多模态响应中提取纯文本内容: {content}")
+            elif isinstance(content_data, str):
+                # 纯文本内容
+                content = content_data
+            else:
+                # 其他类型，转为字符串
+                content = str(content_data)
+        else:
+            content = str(response)
         
         # 检查是否需要忽略
         if "IGNORE_SIGNAL" in content:
@@ -138,56 +139,47 @@ def thinker_node(state: Dict[str, Any], multimodal_model: Any) -> Dict[str, Any]
             "messages": [AIMessage(content=content)],
             "final_answer": content
         }
-    
+        
     except Exception as e:
-        logger.error(f"思考节点执行出错: {e}", exc_info=True)
-        return {**state_dump, "safety_issues": [f"思考过程发生错误: {str(e)}"]}
+        error_msg = f"思考节点执行失败: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return {**state_dump, "safety_issues": [error_msg]}
 
-def router_node(state: Dict[str, Any]) -> str:
+def router_node(state: AgentState) -> str:
     """
     路由节点
     
-    根据思考节点的输出决定下一步流程
+    根据Agent状态决定下一步行动
     
     Args:
         state: 当前状态
         
     Returns:
-        下一个节点的名称
+        下一个节点名称
     """
-    logger.info("路由节点执行")
-    
-    # 检查state是字典还是AgentState对象
-    if isinstance(state, dict):
-        safety_issues = state.get("safety_issues", [])
-        final_answer = state.get("final_answer")
-        tool = state.get("tool")
-    else:
-        safety_issues = state.safety_issues
-        final_answer = state.final_answer
-        tool = state.tool
-    
-    # 检查安全问题
+    # 检查是否有安全问题
+    safety_issues = state.get("safety_issues", [])
     if safety_issues:
-        logger.warning(f"检测到安全问题: {safety_issues}")
+        logger.info("检测到安全问题，转到错误处理节点")
         return "error_handler"
     
-    # 检查是否有最终答案
+    # 检查是否已有最终回答
+    final_answer = state.get("final_answer")
     if final_answer is not None:
-        logger.info(f"已生成最终答案：{final_answer}")
-        logger.info("已生成最终答案，流程结束")
+        logger.info("已有最终回答，结束流程")
         return "end"
     
-    # 检查是否有工具调用
-    if tool and tool.name and tool.input:
-        logger.info(f"检测到工具调用: {tool.name}，进入工具节点")
+    # 检查是否需要执行工具
+    tool = state.get("tool")
+    if tool:
+        logger.info(f"需要执行工具: {tool.name if hasattr(tool, 'name') else 'unknown'}")
         return "action_executor"
     
-    # 默认返回错误处理节点
-    logger.warning("节点输出不明确，进入错误处理")
-    return "error_handler"
+    # 默认结束流程
+    logger.info("没有明确后续流程，结束执行")
+    return "end"
 
-def action_executor_node(state: Dict[str, Any], tools: Dict[str, Any]) -> Dict[str, Any]:
+def action_executor_node(state: AgentState, tools: Dict[str, Any]) -> Dict[str, Any]:
     """
     工具执行节点
     
@@ -202,15 +194,12 @@ def action_executor_node(state: Dict[str, Any], tools: Dict[str, Any]) -> Dict[s
     """
     logger.info("工具执行节点执行")
     
-    # 检查state是字典还是AgentState对象
-    if isinstance(state, dict):
-        tool = state.get("tool")
-        state_dump = state
-    else:
-        tool = state.tool
-        state_dump = state.model_dump()
+    # 获取工具信息
+    tool = state.get("tool")
+    # 使用字典复制而不是model_dump()
+    state_dump = dict(state)
     
-    if not tool or not tool.name or not tool.input:
+    if not tool or not hasattr(tool, "name") or not hasattr(tool, "input"):
         logger.warning("没有工具调用需要执行")
         return {**state_dump, "safety_issues": ["工具调用信息不完整"]}
     
@@ -276,7 +265,7 @@ def action_executor_node(state: Dict[str, Any], tools: Dict[str, Any]) -> Dict[s
             "tool": updated_tool
         }
 
-def error_handler_node(state: Dict[str, Any]) -> Dict[str, Any]:
+def error_handler_node(state: AgentState) -> Dict[str, Any]:
     """
     错误处理节点
     
@@ -290,13 +279,10 @@ def error_handler_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     logger.info("错误处理节点执行")
     
-    # 检查state是字典还是AgentState对象
-    if isinstance(state, dict):
-        safety_issues = state.get("safety_issues", [])
-        state_dump = state
-    else:
-        safety_issues = state.safety_issues
-        state_dump = state.model_dump()
+    # 获取安全问题
+    safety_issues = state.get("safety_issues", [])
+    # 使用字典复制而不是model_dump()
+    state_dump = dict(state)
     
     # 汇总错误原因
     error_reasons = " ".join(safety_issues) if safety_issues else "未知错误"

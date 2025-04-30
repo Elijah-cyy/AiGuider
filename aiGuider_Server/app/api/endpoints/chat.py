@@ -28,7 +28,7 @@ async def chat(
     """
     聊天接口
 
-    接收用户消息和可选的图片，返回AI回复
+    接收用户消息和图片，返回AI回复
     如果没有提供会话ID，将创建新会话
     """
 
@@ -51,8 +51,8 @@ async def chat(
     if not message and not image:
         raise HTTPException(status_code=400, detail="请提供文本消息或图片")
 
-    # 处理消息
-    query_text = message or "查询图片信息"
+    query_text = message
+        
     response = await get_session_manager().process_query(
         effective_session_id,
         query_text,
