@@ -52,11 +52,22 @@ async def chat(
         raise HTTPException(status_code=400, detail="请提供文本消息或图片")
 
     query_text = message
+    
+    # 处理图片文件，将其读取为字节
+    image_data = None
+    if image:
+        try:
+            # 读取上传文件的内容为字节数据
+            image_data = await image.read()
+            logger.info(f"接收到图片文件: {image.filename}, 大小: {len(image_data)} 字节")
+        except Exception as e:
+            logger.error(f"读取上传图片失败: {str(e)}")
+            raise HTTPException(status_code=400, detail=f"图片处理失败: {str(e)}")
         
     response = await get_session_manager().process_query(
         effective_session_id,
         query_text,
-        image
+        image_data
     )
 
     return ChatResponse(

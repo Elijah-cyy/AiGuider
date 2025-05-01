@@ -25,7 +25,7 @@ let conversationHistory = [];
 let isConnected = false;
 let pollingInterval = null;
 let sessionId = null;
-const API_POLLING_INTERVAL = 3000; // 轮询间隔，毫秒
+const API_POLLING_INTERVAL = 20000; // 轮询间隔，毫秒
 
 // 初始化
 function init() {

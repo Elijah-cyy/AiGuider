@@ -116,10 +116,25 @@ class ARGuideAgent:
             if image_data:
                 # 确保图像数据是base64格式
                 if isinstance(image_data, bytes):
+                    # 将原始字节转换为base64编码
                     image_b64 = base64.b64encode(image_data).decode("utf-8")
-                else:
+                    logger.info(f"图像已被转换为base64格式，大小: {len(image_b64)} 字符")
+                elif isinstance(image_data, str) and image_data.startswith("data:image"):
+                    # 已经是data URI格式，提取base64部分
+                    try:
+                        # 提取base64部分（去除"data:image/jpeg;base64,"前缀）
+                        image_b64 = image_data.split(",", 1)[1]
+                        logger.info("输入已经是data URI格式")
+                    except IndexError:
+                        # 格式错误
+                        raise ValueError("无效的Data URI格式图像")
+                elif isinstance(image_data, str):
                     # 假设已经是base64字符串
                     image_b64 = image_data
+                    logger.info("输入被假定为base64字符串格式")
+                else:
+                    # 未知格式
+                    raise ValueError(f"不支持的图像数据类型: {type(image_data)}")
                 
                 # 构建多模态内容
                 if text_query:
