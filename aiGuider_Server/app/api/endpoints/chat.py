@@ -12,6 +12,7 @@ import json
 
 from app.services import get_session_manager
 from app.schemas.responses import ChatResponse, Message, MessagesResponse
+from app.utils.image_processor import preprocess_image
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,10 @@ async def chat(
     if not effective_session_id:
         effective_session_id = get_session_manager().create_session()
 
+    # 验证请求的输入
+    if not message and not image:
+        raise HTTPException(status_code=400, detail="Error 服务器收到无任何输入的请求")
+
     # 解析对话历史
     history = []
     if conversation_history:
@@ -47,26 +52,16 @@ async def chat(
         except json.JSONDecodeError:
             pass
 
-    # 验证消息内容
-    if not message and not image:
-        raise HTTPException(status_code=400, detail="请提供文本消息或图片")
-
-    query_text = message
-    
-    # 处理图片文件，将其读取为字节
-    image_data = None
-    if image:
-        try:
-            # 读取上传文件的内容为字节数据
-            image_data = await image.read()
-            logger.info(f"接收到图片文件: {image.filename}, 大小: {len(image_data)} 字节")
-        except Exception as e:
-            logger.error(f"读取上传图片失败: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"图片处理失败: {str(e)}")
+    # 图像预处理
+    try:
+        image_data = await preprocess_image(image)
+    except HTTPException as e:
+        logger.error(f"图像预处理失败: {str(e.detail)}")
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
         
     response = await get_session_manager().process_query(
         effective_session_id,
-        query_text,
+        message,
         image_data
     )
 

@@ -7,84 +7,46 @@
 import base64
 import re
 from typing import Union, Optional, Tuple
+import logging
 
-def is_valid_base64(s: str) -> bool:
+logger = logging.getLogger(__name__)
+
+def ensure_base64_format(image_data: Union[str, bytes]) -> str:
     """
-    检查字符串是否是有效的base64编码
+    确保传入给多模态大模型的图像数据是base64格式
     
     Args:
-        s: 要检查的字符串
+        image_data: 图像数据，可以是bytes、data URI字符串或base64编码的字符串
         
     Returns:
-        bool: 是否是有效的base64编码
-    """
-    try:
-        # 去除可能的填充等号
-        s = s.strip()
-        # 修正填充
-        if len(s) % 4:
-            s += '=' * (4 - len(s) % 4)
+        str: base64编码的字符串（不包含data URI前缀）
         
-        # 检查是否匹配base64模式
-        pattern = r'^[A-Za-z0-9+/]+={0,2}$'
-        if not re.match(pattern, s):
-            return False
+    Raises:
+        ValueError: 当输入的图像数据格式不支持或无效时抛出
+    """
+    # 如果是字节数据，转换为base64编码
+    if isinstance(image_data, bytes):
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
+        return image_b64
+    
+    # 如果是data URI格式，提取base64部分
+    elif isinstance(image_data, str) and image_data.startswith("data:image"):
+        try:
+            # 提取base64部分（去除"data:image/jpeg;base64,"前缀）
+            image_b64 = image_data.split(",", 1)[1]
+            logger.info("输入已经是data URI格式")
+            return image_b64
+        except IndexError:
+            # 格式错误
+            raise ValueError("无效的Data URI格式图像")
+            
+    # 如果是字符串，假设已经是base64编码
+    elif isinstance(image_data, str):
+        # 假设已经是base64字符串
+        image_b64 = image_data
+        logger.info("输入被假定为base64字符串格式")
+        return image_b64
         
-        # 尝试解码
-        base64.b64decode(s)
-        return True
-    except Exception:
-        return False
-
-def is_valid_data_url(url: str) -> bool:
-    """
-    检查字符串是否是有效的数据URL
-    
-    Args:
-        url: 要检查的URL
-        
-    Returns:
-        bool: 是否是有效的数据URL
-    """
-    pattern = r'^data:image/[a-zA-Z]+;base64,[A-Za-z0-9+/]+=*$'
-    return bool(re.match(pattern, url))
-
-def extract_base64_from_data_url(data_url: str) -> Optional[str]:
-    """
-    从数据URL中提取base64编码的部分
-    
-    Args:
-        data_url: 数据URL
-        
-    Returns:
-        Optional[str]: base64编码的部分，如果无效则返回None
-    """
-    if not is_valid_data_url(data_url):
-        return None
-    
-    # 提取base64部分
-    _, base64_part = data_url.split(',', 1)
-    return base64_part if is_valid_base64(base64_part) else None
-
-def ensure_data_url_format(image_data: str) -> str:
-    """
-    确保图像数据是数据URL格式
-    
-    如果是base64编码，则转换为数据URL格式
-    
-    Args:
-        image_data: 图像数据
-        
-    Returns:
-        str: 数据URL格式的图像数据
-    """
-    # 已经是数据URL
-    if is_valid_data_url(image_data):
-        return image_data
-    
-    # 是base64编码
-    if is_valid_base64(image_data):
-        return f"data:image/jpeg;base64,{image_data}"
-    
-    # 无效数据
-    raise ValueError("无效的图像数据格式，需要base64字符串或数据URL") 
+    # 不支持的类型
+    else:
+        raise ValueError(f"不支持的图像数据类型: {type(image_data)}")

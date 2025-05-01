@@ -19,6 +19,7 @@ from .graph.graph import create_agent
 from .llms.qwen import get_qwen_model
 from .tools.knowledge_searcher import KnowledgeSearcher
 from .graph.state import AgentState
+from .utils.image_utils import ensure_base64_format
 
 logger = logging.getLogger(__name__)
 
@@ -114,27 +115,12 @@ class ARGuideAgent:
             
             # 如果有图像数据，确保图像转为base64格式
             if image_data:
-                # 确保图像数据是base64格式
-                if isinstance(image_data, bytes):
-                    # 将原始字节转换为base64编码
-                    image_b64 = base64.b64encode(image_data).decode("utf-8")
-                    logger.info(f"图像已被转换为base64格式，大小: {len(image_b64)} 字符")
-                elif isinstance(image_data, str) and image_data.startswith("data:image"):
-                    # 已经是data URI格式，提取base64部分
-                    try:
-                        # 提取base64部分（去除"data:image/jpeg;base64,"前缀）
-                        image_b64 = image_data.split(",", 1)[1]
-                        logger.info("输入已经是data URI格式")
-                    except IndexError:
-                        # 格式错误
-                        raise ValueError("无效的Data URI格式图像")
-                elif isinstance(image_data, str):
-                    # 假设已经是base64字符串
-                    image_b64 = image_data
-                    logger.info("输入被假定为base64字符串格式")
-                else:
-                    # 未知格式
-                    raise ValueError(f"不支持的图像数据类型: {type(image_data)}")
+                # 转换图像数据为base64格式
+                try:
+                    image_b64 = ensure_base64_format(image_data)
+                except ValueError as e:
+                    logger.error(f"图像处理失败: {str(e)}")
+                    raise
                 
                 # 构建多模态内容
                 if text_query:
