@@ -52,11 +52,11 @@ async def chat(
         except json.JSONDecodeError:
             pass
 
-    # 图像预处理
+    # 图像预处理，目的是裁剪图片和图像增强，再转换成base64格式
     try:
         image_data = await preprocess_image(image)
     except HTTPException as e:
-        logger.error(f"图像预处理失败: {str(e.detail)}")
+        logger.error(f"图像预处理失败: {str(e.detail)} - 文件: {__file__}, 行数: {e.__traceback__.tb_lineno}")
         raise HTTPException(status_code=e.status_code, detail=e.detail)
         
     response = await get_session_manager().process_query(

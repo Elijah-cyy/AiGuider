@@ -20,6 +20,7 @@ from .llms.qwen import get_qwen_model
 from .tools.knowledge_searcher import KnowledgeSearcher
 from .graph.state import AgentState
 from .utils.image_utils import ensure_base64_format
+from .utils.image_token_utils import estimate_image_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,13 @@ class ARGuideAgent:
                 # 转换图像数据为base64格式
                 try:
                     image_b64 = ensure_base64_format(image_data)
+                    
+                    # 估算图像token数量
+                    try:
+                        token_count, h_bar, w_bar = estimate_image_tokens(image_b64)
+                        logger.info(f"图像token估算: {token_count} tokens (调整后尺寸: {w_bar}x{h_bar}像素 宽x高)")
+                    except Exception as e:
+                        logger.warning(f"图像token估算失败: {str(e)}")
                 except ValueError as e:
                     logger.error(f"图像处理失败: {str(e)}")
                     raise
