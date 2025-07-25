@@ -4,6 +4,6 @@
 包含Agent使用的各种工具
 """
 
-from .knowledge_searcher import KnowledgeSearcher
+from .knowledge_searcher import knowledge_search
 
-__all__ = ["KnowledgeSearcher"] 
+__all__ = ["knowledge_search"] 

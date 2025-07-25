@@ -23,6 +23,7 @@ class ErrorCodes:
     MODEL_INIT_FAILED = "MODEL_004"         # 模型初始化失败
     MODEL_TYPE_NOT_SUPPORTED = "MODEL_005"  # 不支持的模型类型
     MODEL_INVOKE_FAILED = "MODEL_006"       # 模型调用失败
+    MODEL_TOOLS_BINDING_FAILED = "MODEL_007"  # 工具绑定失败
 
     # API错误 (API)
     API_INVALID_REQUEST = "API_001"         # 无效的请求

@@ -16,12 +16,12 @@ from .nodes import (
     action_executor_node,
     error_handler_node
 )
+from ..tools.knowledge_searcher import knowledge_search
 
 logger = logging.getLogger(__name__)
 
 def create_agent(
     multimodal_model: Any, 
-    knowledge_searcher: Any,
     checkpointer: Optional[BaseCheckpointSaver] = None
 ) -> StateGraph:
     """
@@ -31,7 +31,6 @@ def create_agent(
     
     Args:
         multimodal_model: 多模态语言模型，能够直接分析图像内容
-        knowledge_searcher: 知识搜索工具，整合知识图谱和向量检索
         checkpointer: 检查点存储器，用于状态持久化
         
     Returns:
@@ -39,21 +38,19 @@ def create_agent(
     """
     # 创建工作流图
     workflow = StateGraph(AgentState)
+
+    # 定义可用工具列表
+    tools = [knowledge_search]
+
+     # 将工具转换为字典，便于通过名称查找
+    tools_dict = {tool.name: tool for tool in tools}
     
-    # 构建工具字典
-    tools = {
-        "knowledge_search": knowledge_searcher
-    }
+    # 将工具绑定到模型
+    multimodal_model.bind_tools(tools)
     
-    # 添加所有节点
     workflow.add_node("thinker", lambda state: thinker_node(state, multimodal_model))  # 核心思考节点
-    workflow.add_node("action_executor", lambda state: action_executor_node(state, tools))  # 工具执行节点
+    workflow.add_node("action_executor", lambda state: action_executor_node(state, tools_dict))  # 工具执行节点
     workflow.add_node("error_handler", error_handler_node)  # 错误处理节点
-    
-    # 设置入口点为思考节点
-    workflow.set_entry_point("thinker")
-    
-    # 思考节点 -> 条件路由
     workflow.add_conditional_edges(
         "thinker",
         router_node,
@@ -63,12 +60,10 @@ def create_agent(
             "error_handler": "error_handler"  # 如果发生错误
         }
     )
-    
-    # 工具执行节点 -> 思考节点（形成循环）
     workflow.add_edge("action_executor", "thinker")
-    
-    # 错误处理节点 -> 结束
     workflow.add_edge("error_handler", END)
+
+    workflow.set_entry_point("thinker")
     
     # 编译图
     if checkpointer:

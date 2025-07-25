@@ -8,7 +8,7 @@ import os
 import logging
 import time
 import random
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Callable, Sequence
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -18,6 +18,7 @@ from langchain_core.messages import (
     SystemMessage
 )
 from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.tools import BaseTool
 
 from ..config.model_config import ModelConfig
 from ..config.error_codes import ErrorCodes, ModelError
@@ -90,6 +91,34 @@ class QwenVLModel(BaseChatModel):
             raise ModelError(
                 message=error_message,
                 error_code=ErrorCodes.MODEL_INIT_FAILED
+            ) from e
+
+    def bind_tools(self, tools: Sequence[Union[BaseTool, Callable]]) -> "QwenVLModel":
+        """
+        将工具绑定到模型实例
+        这个方法允许为大语言模型绑定LangChain工具，实现工具调用功能。
+
+        Args:
+            tools: LangChain工具列表，可以是BaseTool实例或被@tool装饰的函数
+
+        Returns:
+            QwenVLModel: 返回绑定了工具的模型实例（self）
+        """
+        if self.client is None:
+            error_message = "模型客户端未初始化，无法绑定工具"
+            logger.error(f"{error_message} [错误码: {ErrorCodes.MODEL_INIT_FAILED}]")
+            raise ModelError(message=error_message, error_code=ErrorCodes.MODEL_INIT_FAILED)
+        
+        try:
+            self.client = self.client.bind_tools(tools)
+            return self
+            
+        except Exception as e:
+            error_message = f"绑定工具失败: {e}"
+            logger.error(f"{error_message} [错误码: {ErrorCodes.MODEL_TOOLS_BINDING_FAILED}]", exc_info=True)
+            raise ModelError(
+                message=error_message,
+                error_code=ErrorCodes.MODEL_TOOLS_BINDING_FAILED
             ) from e
 
     def _exponential_backoff(self, retry_count: int) -> float:

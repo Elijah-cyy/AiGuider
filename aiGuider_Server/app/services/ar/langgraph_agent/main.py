@@ -17,7 +17,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from .config.model_config import load_model_config, ConfigError
 from .graph.graph import create_agent
 from .llms.qwen import get_qwen_model
-from .tools.knowledge_searcher import KnowledgeSearcher
 from .graph.state import AgentState
 from .utils.image_utils import ensure_base64_format
 from .utils.image_token_utils import estimate_image_tokens
@@ -50,9 +49,6 @@ class ARGuideAgent:
             # 初始化多模态模型
             self.model = self._initialize_model(model_name)
             
-            # 初始化知识搜索工具
-            self.knowledge_searcher = KnowledgeSearcher()
-            
             # 初始化检查点管理器
             self.checkpointer = MemorySaver()
             
@@ -60,7 +56,6 @@ class ARGuideAgent:
             logger.info("创建多模态Agent图...")
             self.graph = create_agent(
                 multimodal_model=self.model,
-                knowledge_searcher=self.knowledge_searcher,
                 checkpointer=self.checkpointer
             )
             logger.info("多模态Agent图创建完成")
@@ -133,16 +128,14 @@ class ARGuideAgent:
                 # 构建多模态内容
                 if text_query:
                     # 图像+文字情况
-                    logger.info(f"图像+文字输入: {text_query}")
                     multimodal_content = [
                         {"text": text_query},
                         {"image": f"data:image/jpeg;base64,{image_b64}"}
                     ]
                 else:
                     # 纯图像情况，提供一个默认的提示以便模型分析图像
-                    logger.info("纯图像输入")
                     multimodal_content = [
-                        {"text": "AR眼镜中得到了这个画面"},
+                        {"text": "现在我们看到的是这个画面"},
                         {"image": f"data:image/jpeg;base64,{image_b64}"}
                     ]
                 
