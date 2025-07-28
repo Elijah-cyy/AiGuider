@@ -3,3 +3,4 @@
 后端环境安装指南.md
 start_frontend.sh
 start_backend.sh
+*.egg-info/

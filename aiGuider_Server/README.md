@@ -67,7 +67,7 @@ aiGuider_Server/
 │   ├── API_for_Web.md       # Web客户端API文档
 │   └── 后端会话管理技术文档.md  # 会话管理技术文档
 ├── .env                     # 环境变量配置
-└── requirements.txt         # 项目依赖
+└── pyproject.toml           # 项目依赖与配置
 ```
 
 
@@ -106,44 +106,40 @@ aiGuider_Server/
 - **AR导游查询**: 处理AR眼镜查询请求
 - **会话管理**: 支持多用户会话和状态维护
 
-## 安装说明
+## 安装与启动
 
-1. 克隆代码库
+本项目使用 [uv](https://github.com/astral-sh/uv) 进行现代化的包管理，提供了极速的依赖安装和可靠的环境管理。
+
+### 1. 首次部署
+
 ```bash
+# 1. 克隆代码库
 git clone <代码库URL>
 cd aiGuider_Server
-```
 
-2. 创建虚拟环境
+# 2. 同步环境 (uv将自动处理一切)
+uv sync --frozen
+```
+> `uv sync` 会自动创建虚拟环境、安装 Python 版本和所有依赖。
+
+### 2. 配置 API Key
+
+后端服务依赖通义千问模型，请务必配置 API Key：
+
 ```bash
-python -m venv venv
-source venv/bin/activate  # Windows下使用: venv\Scripts\activate
+# 设置环境变量 (推荐方式)
+export DASHSCOPE_API_KEY="你的通义千问API_KEY"
 ```
+> Windows PowerShell 请使用 `$env:DASHSCOPE_API_KEY="你的..."`。
 
-3. 安装依赖
+### 3. 启动服务
+
+使用 `uv run` 命令启动，无需手动激活虚拟环境。
+
 ```bash
-pip install -r requirements.txt
+# 在 aiGuider_Server 目录下执行
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-
-3.1. **配置通义千问 API Key (重要)**
-
-   后端服务依赖通义千问模型。请配置 API Key：
-   *   **推荐方式：** 设置环境变量 `DASHSCOPE_API_KEY` 为您的 Key。
-     ```bash
-     # Linux/macOS
-     export DASHSCOPE_API_KEY="你的通义千问API Key"
-     # Windows (PowerShell)
-     # $env:DASHSCOPE_API_KEY="你的通义千问API Key"
-     ```
-   *   **备选方式：** 修改配置文件 `aiGuider_Server/app/services/ar/langgraph_agent/config/model_configs.json` 中的 `api_key` 字段。
-
-   请将 `"你的通义千问API Key"` 替换为您的真实 Key。
-
-4. 启动服务
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
 
 ## API接口文档
 

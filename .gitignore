@@ -5,3 +5,6 @@ __pycache__/
 # Patch files
 patch.patch
 .venv/
+
+# Python package metadata
+*.egg-info/
