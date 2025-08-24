@@ -4,3 +4,4 @@
 start_frontend.sh
 start_backend.sh
 *.egg-info/
+.qoder/
