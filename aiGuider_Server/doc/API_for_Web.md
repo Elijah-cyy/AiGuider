@@ -1,6 +1,6 @@
 # WEB应用的API文档说明
 
-## 1. GET http://localhost:8000/api/v1/health/
+## 1. GET http://localhost:6160/api/v1/health/
 ### 路由注册
 - 基础路径：/api/v1 (来自 `aiGuider_Server\app\core\config.py` 中的 API_V1_STR)
 - 健康检查前缀：/health
@@ -24,7 +24,7 @@
 - 监控系统健康状态
 - 返回API和数据库连接状态
 
-## 2. GET http://localhost:8000/api/v1/messages
+## 2. GET http://localhost:6160/api/v1/messages
 ### 路由注册
 - 基础路径：/api/v1 (来自 `aiGuider_Server\app\core\config.py` 中的 API_V1_STR)
 - 直接注册：/messages
@@ -50,7 +50,7 @@
 - 用于实现主动交互功能
 - 返回格式为MessagesResponse，包含消息列表
 
-## 3. POST http://localhost:8000/api/v1/chat
+## 3. POST http://localhost:6160/api/v1/chat
 ### 路由注册
 - 基础路径：/api/v1 (来自 `aiGuider_Server\app\core\config.py` 中的 API_V1_STR)
 - 直接注册：/chat
@@ -88,7 +88,7 @@
 - 维护会话状态和对话历史
 - 返回格式为ChatResponse，包含AI回复和会话ID
 
-## 4. （不重要）GET http://localhost:8000/
+## 4. （不重要）GET http://localhost:6160/
 ### 路由注册
 - 直接在主应用上注册
 - 不需要前缀

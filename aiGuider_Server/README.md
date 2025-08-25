@@ -2,143 +2,45 @@
 
 ## 项目概述
 
-这是一个基于FastAPI的AR智能导游眼镜系统后端服务，整合多模态感知、大语言模型（LLM）和知识图谱技术，实现低延迟的实时交互。本项目是整个AR智能导游眼镜系统的服务器端部分，负责处理来自AR眼镜客户端的请求，提供智能导游服务。
-
-### 技术栈
-
-- **Web框架**: FastAPI (>=0.95)
-- **LLM编排**: LangGraph
-- **数据库**: PostgreSQL + SQLAlchemy异步驱动
-- **消息队列**: Kafka + aiokafka
-- **通信协议**: gRPC-Web + Protocol Buffers
-- **部署**: Gunicorn+Uvicorn组合
-
-## 项目结构详解
-
-```
-aiGuider_Server/
-├── app/                      # 应用主目录
-│   ├── __init__.py          # 应用初始化
-│   ├── main.py              # FastAPI应用入口，包含应用创建和中间件配置
-│   │
-│   ├── core/                # 核心配置目录
-│   │   ├── __init__.py
-│   │   ├── config.py        # 系统配置管理，包含数据库、API等配置
-│   │   ├── security.py      # 安全相关配置，如认证、加密等
-│   │   └── errors.py        # 全局错误处理机制
-│   │
-│   ├── api/                 # API接口层
-│   │   ├── __init__.py
-│   │   ├── endpoints/       # API端点实现
-│   │   │   ├── __init__.py
-│   │   │   ├── health.py    # 健康检查接口
-│   │   │   ├── session.py   # 会话管理接口
-│   │   │   ├── chat.py      # 聊天功能接口
-│   │   │   └── ar_guide.py  # AR导游功能接口
-│   │   └── api.py           # API路由注册和版本控制
-│   │
-│   ├── schemas/             # 数据模型定义
-│   │   ├── __init__.py
-│   │   ├── requests.py      # API请求模型
-│   │   └── responses.py     # API响应模型
-│   │
-│   ├── services/            # 业务逻辑层（核心代码）
-│   │   ├── __init__.py      # 服务层入口
-│   │   ├── session/         # 会话管理服务模块
-│   │   │   ├── __init__.py
-│   │   │   ├── session_model.py    # 会话数据模型
-│   │   │   └── session_manager.py  # 会话管理器
-│   │   └── ar/              # AR服务模块
-│   │       ├── __init__.py
-│   │       └── ar_query_service.py # AR查询服务
-│   │
-│   ├── db/                  # 数据库层
-│   │   ├── __init__.py
-│   │   ├── base.py          # 数据库连接和会话管理
-│   │   └── models.py        # 数据库模型定义
-│   │
-│   └── utils/               # 工具函数
-│       ├── __init__.py
-│       └── helpers.py       # 通用辅助函数
-│
-├── tests/                   # 测试目录
-├── doc/                     # 文档目录
-│   ├── API_for_Android.md   # Android客户端API文档
-│   ├── API_for_Web.md       # Web客户端API文档
-│   └── 后端会话管理技术文档.md  # 会话管理技术文档
-├── .env                     # 环境变量配置
-└── pyproject.toml           # 项目依赖与配置
-```
-
-
-## 错误处理机制
-
-系统实现了分级错误处理机制，确保在各种场景下都能提供适当的错误响应和降级服务：
-
-### 三级错误处理
-
-1. **客户端错误 (400-499)**
-   - 立即返回错误信息给客户端
-   - 包含错误码、错误消息和调试ID
-   - 常见错误: 请求参数无效、认证失败、资源不存在
-
-2. **服务端错误 (500-599)**
-   - 在3秒内返回降级响应
-   - 记录完整错误堆栈并生成调试ID
-   - 支持指数退避算法自动重试
-
-3. **LLM错误 (特定错误码)**
-   - 在AI模型不可用时返回预设知识库内容
-   - 支持异步重试机制
-   - 提供友好的降级响应
-
-所有错误响应都包含以下信息:
-- `error_code`: 错误标识码
-- `message`: 用户友好的错误描述
-- `debug_id`: 用于追踪和调试的唯一ID
-- `details`: 可选的详细错误信息
-
-## 功能特点
-
-- **错误处理机制**: 实现分级错误处理
-- **异步处理**: 支持高并发
-- **健康检查**: 提供服务和数据库状态监控
-- **AR导游查询**: 处理AR眼镜查询请求
-- **会话管理**: 支持多用户会话和状态维护
+这是一个AR智能导游眼镜系统的后端服务，负责处理来自AR眼镜客户端的请求，提供智能导游服务。
 
 ## 安装与启动
 
-本项目使用 [uv](https://github.com/astral-sh/uv) 进行现代化的包管理，提供了极速的依赖安装和可靠的环境管理。
+本项目使用 [uv](https://github.com/astral-sh/uv) 进行python包管理，提供了极速的依赖安装和可靠的环境管理。
 
-### 1. 首次部署
+### 1. 安装 uv 工具（首次执行）
+
+在服务器上执行以下命令安装 uv。如果已安装，请跳过此步骤。
 
 ```bash
-# 1. 克隆代码库
-git clone <代码库URL>
+# 使用 pip 安装 uv，并配置国内镜像源
+pip install uv -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+```
+
+### 2. 同步依赖环境
+
+进入项目目录，执行 `uv sync` 命令。uv 将自动完成所有环境配置。
+
+```bash
+# 进入后端服务目录
 cd aiGuider_Server
 
-# 2. 同步环境 (uv将自动处理一切)
-uv sync --frozen
+# 使用国内镜像源一键同步依赖环境
+uv sync --frozen --index-url http://mirrors.aliyun.com/pypi/simple/
 ```
-> `uv sync` 会自动创建虚拟环境、安装 Python 版本和所有依赖。
 
-### 2. 配置 API Key
-
-后端服务依赖通义千问模型，请务必配置 API Key：
-
-```bash
-# 设置环境变量 (推荐方式)
-export DASHSCOPE_API_KEY="你的通义千问API_KEY"
-```
-> Windows PowerShell 请使用 `$env:DASHSCOPE_API_KEY="你的..."`。
+> **提示**: `uv sync` 会自动下载所需的 Python 3.11 版本，并创建 `.venv` 虚拟环境，无需手动操作。`--frozen` 参数确保严格按照 `uv.lock` 文件安装，保证生产环境的一致性。
 
 ### 3. 启动服务
 
-使用 `uv run` 命令启动，无需手动激活虚拟环境。
+使用 `uv run` 命令启动服务，无需手动激活虚拟环境。
 
 ```bash
-# 在 aiGuider_Server 目录下执行
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# 进入后端服务目录
+cd aiGuider_Server
+
+# 启动服务
+uv run uvicorn app.main:app --host 0.0.0.0 --port 6160
 ```
 
 ## API接口文档

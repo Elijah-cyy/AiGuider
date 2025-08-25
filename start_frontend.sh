@@ -7,8 +7,8 @@ cd aiGuider_Client/web
 
 
 echo "使用Python启动Web服务器..."
-echo "在浏览器中访问 `http://localhost:8080`即可启动web前端"
-python -m http.server 8080
+echo "在浏览器中访问 `http://localhost:6161`即可启动web前端"
+python -m http.server 6161
 
 # 脚本结束时提示
 echo "Web服务器已关闭"
