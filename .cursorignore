@@ -1,7 +1,4 @@
 # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
 .venv/
-后端环境安装指南.md
-start_frontend.sh
-start_backend.sh
 *.egg-info/
 .qoder/

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["*"]
     
     # 项目信息
-    PROJECT_NAME: str = "AR智能导游眼镜系统"
+    PROJECT_NAME: str = "AI Guider Server"
     
     # 数据库配置
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
